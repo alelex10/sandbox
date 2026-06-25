@@ -17,8 +17,24 @@ const envSchema = z.object({
   MP_BACK_URL: z.string().url().optional(),
 });
 
+let _env: z.infer<typeof envSchema> | null = null;
+
+export function validateEnv(): z.infer<typeof envSchema> {
+  if (!_env) {
+    _env = envSchema.parse(process.env);
+  }
+  return _env;
+}
+
 /**
  * Parsed and validated environment variables.
- * Throws ZodError at startup if validation fails.
+ * Call validateEnv() first before using this.
  */
-export const env = envSchema.parse(process.env);
+export const env = new Proxy({} as z.infer<typeof envSchema>, {
+  get(_target, prop) {
+    if (!_env) {
+      throw new Error("validateEnv() must be called before accessing env");
+    }
+    return _env[prop as keyof z.infer<typeof envSchema>];
+  },
+});

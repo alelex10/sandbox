@@ -1,8 +1,5 @@
 // Load .env from the repo root regardless of cwd — must be first
-import { config as loadEnv } from "dotenv";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-loadEnv({ path: resolve(dirname(fileURLToPath(import.meta.url)), "../../../.env") });
+import "./load-env.js";
 
 import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
@@ -12,7 +9,10 @@ import { a1Router } from "./routes/a1.js";
 import { a2Router } from "./routes/a2.js";
 import { a3Router } from "./routes/a3.js";
 import { bRouter } from "./routes/b.js";
-import { env } from "./config.js";
+import { validateEnv, env } from "./config.js";
+
+// Validate environment variables after loading .env
+validateEnv();
 
 const app = express();
 app.use(cors());
