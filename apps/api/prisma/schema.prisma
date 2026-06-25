@@ -8,15 +8,15 @@ datasource db {
 }
 
 model Subscription {
-  id                String         @id @default(uuid())
+  id                String                  @id @default(uuid())
   method            String
   mpId              String?
   status            String?
   externalReference String?
   payerEmail        String?
   reason            String?
-  amount            Float          @default(0)
-  currency          String         @default("ARS")
+  amount            Float                   @default(0)
+  currency          String                  @default("ARS")
   startDate         String?
   initPoint         String?
   preapprovalPlanId String?
@@ -25,12 +25,25 @@ model Subscription {
   tokenization      String?
   rawCreate         String?
   rawLastSearch     String?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
   events            WebhookEvent[]
   charges           OrderCharge[]
+  snapshots         SubscriptionSnapshot[]
 
   @@index([externalReference])
+}
+
+model SubscriptionSnapshot {
+  id             String       @id @default(uuid())
+  subscriptionId String
+  kind           String
+  statusAtTime   String?
+  raw            String
+  createdAt      DateTime     @default(now())
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id])
+
+  @@index([subscriptionId])
 }
 
 model Plan {

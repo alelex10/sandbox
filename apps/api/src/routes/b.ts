@@ -58,6 +58,15 @@ bRouter.post("/profiles", async (req: Request, res: Response, next: NextFunction
       },
     });
 
+    await db.subscriptionSnapshot.create({
+      data: {
+        subscriptionId: subscription.id,
+        kind: "create",
+        statusAtTime: mpStatus,
+        raw: JSON.stringify(mpResult),
+      },
+    });
+
     res.status(201).json({
       id: subscription.id,
       method: subscription.method,
@@ -206,6 +215,73 @@ bRouter.get("/", async (_req: Request, res: Response, next: NextFunction) => {
     next(err);
   }
 });
+
+// GET /b/:id — detail view: subscription + unified timeline (snapshots + webhooks + charges)
+// Express /:id only matches one path segment so /:id/charges is not shadowed by this route
+bRouter.get(
+  "/:id",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const subscription = await db.subscription.findUnique({
+        where: { id: req.params.id },
+        include: {
+          snapshots: { orderBy: { createdAt: "asc" } },
+          charges: { orderBy: { createdAt: "asc" } },
+          events: { orderBy: { receivedAt: "asc" } },
+        },
+      });
+
+      if (!subscription || subscription.method !== "b_orders") {
+        res.status(404).json({ error: "Subscription not found" });
+        return;
+      }
+
+      const timeline = [
+        ...subscription.snapshots.map((s) => ({
+          id: s.id,
+          type: s.kind as "create" | "search",
+          label: s.kind === "create" ? "Creación" : "Búsqueda en MP",
+          status: s.statusAtTime,
+          at: s.createdAt.toISOString(),
+          data: tryJsonParse(s.raw),
+        })),
+        ...subscription.events.map((ev) => ({
+          id: ev.id,
+          type: "webhook" as const,
+          label: ev.topic,
+          status: ev.action,
+          at: ev.receivedAt.toISOString(),
+          data: {
+            body: tryJsonParse(ev.rawBody as string | null),
+            fetched: tryJsonParse(ev.rawFetched as string | null),
+          },
+        })),
+        ...subscription.charges.map((c) => ({
+          id: c.id,
+          type: "charge" as const,
+          label: "Cobro",
+          status: c.status,
+          at: c.createdAt.toISOString(),
+          data: tryJsonParse(c.rawResponse),
+        })),
+      ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+
+      res.json({
+        id: subscription.id,
+        method: subscription.method,
+        mpId: subscription.mpId,
+        status: subscription.status,
+        initPoint: subscription.initPoint,
+        rawCreate: tryJsonParse(subscription.rawCreate),
+        rawLastSearch: tryJsonParse(subscription.rawLastSearch),
+        createdAt: subscription.createdAt.toISOString(),
+        timeline,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // GET /b/:id/charges — list all OrderCharge rows for a subscription
 bRouter.get("/:id/charges", async (req: Request, res: Response, next: NextFunction) => {

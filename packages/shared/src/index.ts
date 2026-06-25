@@ -95,6 +95,30 @@ export const SubscriptionResponse = z.object({
 });
 export type SubscriptionResponse = z.infer<typeof SubscriptionResponse>;
 
+export const SubscriptionSnapshotResponse = z.object({
+  id: z.string(),
+  kind: z.string(),
+  statusAtTime: z.string().nullable(),
+  raw: z.unknown(),
+  createdAt: z.string(),
+});
+export type SubscriptionSnapshotResponse = z.infer<typeof SubscriptionSnapshotResponse>;
+
+export const TimelineEntryResponse = z.object({
+  id: z.string(),
+  type: z.enum(["create", "search", "webhook", "charge"]),
+  label: z.string(),
+  status: z.string().nullable(),
+  at: z.string(),
+  data: z.unknown(),
+});
+export type TimelineEntryResponse = z.infer<typeof TimelineEntryResponse>;
+
+export const SubscriptionDetailResponse = SubscriptionResponse.extend({
+  timeline: z.array(TimelineEntryResponse),
+});
+export type SubscriptionDetailResponse = z.infer<typeof SubscriptionDetailResponse>;
+
 export const WebhookEventResponse = z.object({
   id: z.string(),
   method: z.string().nullable(),

@@ -50,6 +50,15 @@ a1Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
       },
     });
 
+    await db.subscriptionSnapshot.create({
+      data: {
+        subscriptionId: subscription.id,
+        kind: "create",
+        statusAtTime: result.status ?? null,
+        raw: JSON.stringify(result),
+      },
+    });
+
     res.status(201).json({
       id: subscription.id,
       method: subscription.method,
@@ -137,7 +146,73 @@ a1Router.get(
         data: { rawLastSearch: JSON.stringify(mpResult) },
       });
 
+      await db.subscriptionSnapshot.create({
+        data: {
+          subscriptionId: subscription.id,
+          kind: "search",
+          statusAtTime: (mpResult as Record<string, unknown>)?.status as string ?? null,
+          raw: JSON.stringify(mpResult),
+        },
+      });
+
       res.json(mpResult);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// GET /a1/:id — detail view: subscription + unified timeline
+a1Router.get(
+  "/:id",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const subscription = await db.subscription.findUnique({
+        where: { id: req.params.id },
+        include: {
+          snapshots: { orderBy: { createdAt: "asc" } },
+          events: { orderBy: { receivedAt: "asc" } },
+        },
+      });
+
+      if (!subscription || subscription.method !== "a1_pending") {
+        res.status(404).json({ error: "Subscription not found" });
+        return;
+      }
+
+      const timeline = [
+        ...subscription.snapshots.map((s) => ({
+          id: s.id,
+          type: s.kind as "create" | "search",
+          label: s.kind === "create" ? "Creación" : "Búsqueda en MP",
+          status: s.statusAtTime,
+          at: s.createdAt.toISOString(),
+          data: tryJsonParse(s.raw),
+        })),
+        ...subscription.events.map((ev) => ({
+          id: ev.id,
+          type: "webhook" as const,
+          label: ev.topic,
+          status: ev.action,
+          at: ev.receivedAt.toISOString(),
+          data: {
+            body: tryJsonParse(ev.rawBody as string | null),
+            fetched: tryJsonParse(ev.rawFetched as string | null),
+          },
+        })),
+      ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+
+      res.json({
+        id: subscription.id,
+        method: subscription.method,
+        mpId: subscription.mpId,
+        status: subscription.status,
+        initPoint: subscription.initPoint,
+        rawCreate: tryJsonParse(subscription.rawCreate),
+        rawLastSearch: tryJsonParse(subscription.rawLastSearch),
+        createdAt: subscription.createdAt.toISOString(),
+        timeline,
+      });
     } catch (err) {
       next(err);
     }
