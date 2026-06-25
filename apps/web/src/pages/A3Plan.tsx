@@ -524,8 +524,15 @@ function PlanesView({
 // Suscripciones sub-view (unchanged behavior from original A3Plan)
 // ---------------------------------------------------------------------------
 
-function SuscripcionesView({ plans }: { plans: PlanResponse[] }) {
-  const [subscriptions, setSubscriptions] = useState<SubscriptionResponse[]>([]);
+function SuscripcionesView({
+  plans,
+  subscriptions,
+  onSubscriptionsRefresh,
+}: {
+  plans: PlanResponse[];
+  subscriptions: SubscriptionResponse[];
+  onSubscriptionsRefresh: () => void;
+}) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SubscriptionDetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -548,19 +555,6 @@ function SuscripcionesView({ plans }: { plans: PlanResponse[] }) {
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchIsInfo, setSearchIsInfo] = useState(false);
-
-  const fetchSubscriptions = useCallback(async () => {
-    try {
-      const rows = await listA3();
-      setSubscriptions(rows);
-    } catch {
-      // non-critical
-    }
-  }, []);
-
-  useEffect(() => {
-    void fetchSubscriptions();
-  }, [fetchSubscriptions]);
 
   const fetchDetail = useCallback(async (id: string) => {
     setDetailLoading(true);
@@ -609,7 +603,7 @@ function SuscripcionesView({ plans }: { plans: PlanResponse[] }) {
       setSubResult(res);
       setCardTokenId(null);
       setTokenSource(null);
-      await fetchSubscriptions();
+      onSubscriptionsRefresh();
       setSelectedId(res.id);
       void fetchDetail(res.id);
     } catch (err) {
@@ -992,6 +986,7 @@ function SuscripcionesView({ plans }: { plans: PlanResponse[] }) {
 export function A3Plan() {
   const [subView, setSubView] = useState<SubView>("planes");
   const [plans, setPlans] = useState<PlanResponse[]>([]);
+  const [subscriptions, setSubscriptions] = useState<SubscriptionResponse[]>([]);
 
   const fetchPlans = useCallback(async () => {
     try {
@@ -1002,9 +997,19 @@ export function A3Plan() {
     }
   }, []);
 
+  const fetchSubscriptions = useCallback(async () => {
+    try {
+      const rows = await listA3();
+      setSubscriptions(rows);
+    } catch {
+      // non-critical
+    }
+  }, []);
+
   useEffect(() => {
     void fetchPlans();
-  }, [fetchPlans]);
+    void fetchSubscriptions();
+  }, [fetchPlans, fetchSubscriptions]);
 
   return (
     <div>
@@ -1024,7 +1029,11 @@ export function A3Plan() {
       {subView === "planes" ? (
         <PlanesView plans={plans} onPlansRefresh={fetchPlans} />
       ) : (
-        <SuscripcionesView plans={plans} />
+        <SuscripcionesView
+          plans={plans}
+          subscriptions={subscriptions}
+          onSubscriptionsRefresh={fetchSubscriptions}
+        />
       )}
     </div>
   );

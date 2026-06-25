@@ -134,15 +134,6 @@ export const PlanResponse = z.object({
 });
 export type PlanResponse = z.infer<typeof PlanResponse>;
 
-export const PlanSnapshotResponse = z.object({
-  id: z.string(),
-  kind: z.string(),
-  statusAtTime: z.string().nullable(),
-  raw: z.unknown(),
-  createdAt: z.string(),
-});
-export type PlanSnapshotResponse = z.infer<typeof PlanSnapshotResponse>;
-
 export const PlanDetailResponse = PlanResponse.extend({
   timeline: z.array(TimelineEntryResponse),
 });

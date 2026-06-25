@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
     "start": "pnpm --parallel --filter \"./apps/*\" start",
+    "build:packages": "pnpm --filter shared build && pnpm --filter payments build",
     "db:push": "pnpm --filter api db:push",
     "db:generate": "pnpm --filter api db:generate"
   }

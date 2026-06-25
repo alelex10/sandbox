@@ -152,22 +152,23 @@ a2Router.get(
       const mpStatus = (mpResult as Record<string, unknown>)?.status;
       const rawSearch = JSON.stringify(mpResult);
 
-      await db.subscription.update({
-        where: { id: subscription.id },
-        // M2: also sync Subscription.status so sidebar badge reflects latest known state
-        data: {
-          rawLastSearch: rawSearch,
-          status: mpStatus != null ? String(mpStatus) : undefined,
-        },
-      });
-
-      await db.subscriptionSnapshot.create({
-        data: {
-          subscriptionId: subscription.id,
-          kind: "search",
-          statusAtTime: mpStatus != null ? String(mpStatus) : null,
-          raw: rawSearch,
-        },
+      await db.$transaction(async (tx) => {
+        await tx.subscription.update({
+          where: { id: subscription.id },
+          // M2: also sync Subscription.status so sidebar badge reflects latest known state
+          data: {
+            rawLastSearch: rawSearch,
+            status: mpStatus != null ? String(mpStatus) : undefined,
+          },
+        });
+        await tx.subscriptionSnapshot.create({
+          data: {
+            subscriptionId: subscription.id,
+            kind: "search",
+            statusAtTime: mpStatus != null ? String(mpStatus) : null,
+            raw: rawSearch,
+          },
+        });
       });
 
       res.json(mpResult);
