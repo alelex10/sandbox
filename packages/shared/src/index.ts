@@ -119,6 +119,35 @@ export const SubscriptionDetailResponse = SubscriptionResponse.extend({
 });
 export type SubscriptionDetailResponse = z.infer<typeof SubscriptionDetailResponse>;
 
+export const PlanResponse = z.object({
+  id: z.string(),
+  mpPlanId: z.string().nullable(),
+  reason: z.string().nullable(),
+  amount: z.number(),
+  currency: z.string(),
+  frequency: z.number(),
+  frequencyType: z.string(),
+  initPoint: z.string().nullable(),
+  rawCreate: z.unknown().nullable(),
+  rawLastSearch: z.unknown().nullable(),
+  createdAt: z.string(),
+});
+export type PlanResponse = z.infer<typeof PlanResponse>;
+
+export const PlanSnapshotResponse = z.object({
+  id: z.string(),
+  kind: z.string(),
+  statusAtTime: z.string().nullable(),
+  raw: z.unknown(),
+  createdAt: z.string(),
+});
+export type PlanSnapshotResponse = z.infer<typeof PlanSnapshotResponse>;
+
+export const PlanDetailResponse = PlanResponse.extend({
+  timeline: z.array(TimelineEntryResponse),
+});
+export type PlanDetailResponse = z.infer<typeof PlanDetailResponse>;
+
 export const WebhookEventResponse = z.object({
   id: z.string(),
   method: z.string().nullable(),

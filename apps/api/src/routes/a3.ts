@@ -1,11 +1,167 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { CreatePlanRequest, SubscribeToPlanRequest } from "shared";
-import { createPlan, subscribeToPlan, getA3Subscription } from "payments";
+import { createPlan, subscribeToPlan, getA3Subscription, getPlan } from "payments";
 import { db } from "../db.js";
 import { mpClient, getMpBackUrl } from "../mp.js";
 import { tryJsonParse } from "../util.js";
 
 export const a3Router = Router();
+
+// ---------------------------------------------------------------------------
+// Plan routes — registered BEFORE generic /:id routes to avoid shadowing
+// ---------------------------------------------------------------------------
+
+// GET /a3/plans — list all Plan rows (parse-on-read for rawCreate)
+a3Router.get("/plans", async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const plans = await db.plan.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+
+    const result = plans.map((p) => ({
+      id: p.id,
+      mpPlanId: p.mpPlanId,
+      reason: p.reason,
+      amount: p.amount,
+      currency: p.currency,
+      frequency: p.frequency,
+      frequencyType: p.frequencyType,
+      initPoint: p.initPoint,
+      rawCreate: tryJsonParse(p.rawCreate),
+      rawLastSearch: tryJsonParse(p.rawLastSearch),
+      createdAt: p.createdAt.toISOString(),
+    }));
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /a3/plans/:id/mp — fetch live MP state for a plan, append PlanSnapshot kind='search'
+a3Router.get(
+  "/plans/:id/mp",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const plan = await db.plan.findUnique({
+        where: { id: req.params.id },
+      });
+
+      if (!plan) {
+        res.status(404).json({ error: "Plan not found" });
+        return;
+      }
+
+      if (!plan.mpPlanId) {
+        res.status(422).json({ error: "Plan has no mpPlanId to search" });
+        return;
+      }
+
+      let mpResult: unknown;
+      try {
+        mpResult = await getPlan(mpClient(), plan.mpPlanId);
+      } catch (mpErr) {
+        const detail =
+          mpErr instanceof Error ? mpErr.message : "Unknown MP error";
+        res.status(502).json({ error: "MercadoPago fetch failed", detail });
+        return;
+      }
+
+      const mpStatus = (mpResult as unknown as Record<string, unknown>)?.status;
+      const rawSearch = JSON.stringify(mpResult);
+
+      await db.plan.update({
+        where: { id: plan.id },
+        data: {
+          rawLastSearch: rawSearch,
+        },
+      });
+
+      await db.planSnapshot.create({
+        data: {
+          planId: plan.id,
+          kind: "search",
+          statusAtTime: mpStatus != null ? String(mpStatus) : null,
+          raw: rawSearch,
+        },
+      });
+
+      res.json(mpResult);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// GET /a3/plans/:id — plan detail with unified timeline
+a3Router.get(
+  "/plans/:id",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const plan = await db.plan.findUnique({
+        where: { id: req.params.id },
+        include: {
+          snapshots: { orderBy: { createdAt: "asc" } },
+        },
+      });
+
+      if (!plan) {
+        res.status(404).json({ error: "Plan not found" });
+        return;
+      }
+
+      // Attribute plan webhooks: WebhookEvent where category='plan' AND mpResourceId=plan.mpPlanId
+      const webhookEvents = plan.mpPlanId
+        ? await db.webhookEvent.findMany({
+            where: {
+              category: "plan",
+              mpResourceId: plan.mpPlanId,
+            },
+            orderBy: { receivedAt: "asc" },
+          })
+        : [];
+
+      const timeline = [
+        ...plan.snapshots.map((s) => ({
+          id: s.id,
+          type: s.kind as "create" | "search",
+          label: s.kind === "create" ? "Creación del plan" : "Búsqueda del plan en MP",
+          status: s.statusAtTime,
+          at: s.createdAt.toISOString(),
+          data: tryJsonParse(s.raw),
+        })),
+        ...webhookEvents.map((ev) => ({
+          id: ev.id,
+          type: "webhook" as const,
+          label: ev.topic,
+          status: ev.action,
+          at: ev.receivedAt.toISOString(),
+          data: {
+            body: tryJsonParse(ev.rawBody as string | null),
+            fetched: tryJsonParse(ev.rawFetched as string | null),
+          },
+        })),
+      ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+
+      res.json({
+        id: plan.id,
+        mpPlanId: plan.mpPlanId,
+        reason: plan.reason,
+        amount: plan.amount,
+        currency: plan.currency,
+        frequency: plan.frequency,
+        frequencyType: plan.frequencyType,
+        initPoint: plan.initPoint,
+        rawCreate: tryJsonParse(plan.rawCreate),
+        rawLastSearch: tryJsonParse(plan.rawLastSearch),
+        createdAt: plan.createdAt.toISOString(),
+        timeline,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // POST /a3/plans — create a PreApprovalPlan template
 a3Router.post("/plans", async (req: Request, res: Response, next: NextFunction) => {
@@ -26,7 +182,7 @@ a3Router.post("/plans", async (req: Request, res: Response, next: NextFunction) 
       },
     });
 
-    // Fix #1: guard against missing mpPlanId — do not persist a null plan id
+    // Guard against missing mpPlanId — do not persist a null plan id
     const mpPlanId = (result as { id?: string }).id ?? null;
     if (!mpPlanId) {
       const safeDetail =
@@ -40,7 +196,7 @@ a3Router.post("/plans", async (req: Request, res: Response, next: NextFunction) 
       return;
     }
 
-    // Fix #4: prefer billing fields from MP auto_recurring; fall back to request body
+    // Prefer billing fields from MP auto_recurring; fall back to request body
     const mpAutoRecurring = (result as { auto_recurring?: Record<string, unknown> }).auto_recurring;
     const amount =
       typeof mpAutoRecurring?.transaction_amount === "number"
@@ -59,17 +215,32 @@ a3Router.post("/plans", async (req: Request, res: Response, next: NextFunction) 
         ? mpAutoRecurring.frequency_type
         : body.autoRecurring.frequencyType;
 
-    const plan = await db.plan.create({
-      data: {
-        mpPlanId,
-        reason: body.reason,
-        amount,
-        currency,
-        frequency,
-        frequencyType,
-        initPoint: (result as { init_point?: string }).init_point ?? null,
-        rawCreate: JSON.stringify(result),
-      },
+    const mpStatus = (result as unknown as Record<string, unknown>)?.status;
+    const rawCreate = JSON.stringify(result);
+
+    // Atomic: plan row + initial snapshot created together (mirrors M1 pattern)
+    const plan = await db.$transaction(async (tx) => {
+      const p = await tx.plan.create({
+        data: {
+          mpPlanId,
+          reason: body.reason,
+          amount,
+          currency,
+          frequency,
+          frequencyType,
+          initPoint: (result as { init_point?: string }).init_point ?? null,
+          rawCreate,
+        },
+      });
+      await tx.planSnapshot.create({
+        data: {
+          planId: p.id,
+          kind: "create",
+          statusAtTime: mpStatus != null ? String(mpStatus) : null,
+          raw: rawCreate,
+        },
+      });
+      return p;
     });
 
     res.status(201).json({
@@ -82,6 +253,7 @@ a3Router.post("/plans", async (req: Request, res: Response, next: NextFunction) 
       frequencyType: plan.frequencyType,
       initPoint: plan.initPoint,
       rawCreate: result,
+      rawLastSearch: null,
       createdAt: plan.createdAt.toISOString(),
     });
   } catch (err) {
@@ -89,31 +261,9 @@ a3Router.post("/plans", async (req: Request, res: Response, next: NextFunction) 
   }
 });
 
-// GET /a3/plans — list all Plan rows (parse-on-read for rawCreate)
-a3Router.get("/plans", async (_req: Request, res: Response, next: NextFunction) => {
-  try {
-    const plans = await db.plan.findMany({
-      orderBy: { createdAt: "desc" },
-    });
-
-    const result = plans.map((p) => ({
-      id: p.id,
-      mpPlanId: p.mpPlanId,
-      reason: p.reason,
-      amount: p.amount,
-      currency: p.currency,
-      frequency: p.frequency,
-      frequencyType: p.frequencyType,
-      initPoint: p.initPoint,
-      rawCreate: tryJsonParse(p.rawCreate),
-      createdAt: p.createdAt.toISOString(),
-    }));
-
-    res.json(result);
-  } catch (err) {
-    next(err);
-  }
-});
+// ---------------------------------------------------------------------------
+// Subscription routes (A.3 PreApproval subscriptions linked to a plan)
+// ---------------------------------------------------------------------------
 
 // POST /a3/subscribe — subscribe a payer to a plan
 // Two paths:
@@ -185,7 +335,7 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
         orderBy: { createdAt: "desc" },
       });
 
-      // Fix #3: guard — do not persist Subscription when plan is missing or has no initPoint
+      // Guard — do not persist Subscription when plan is missing or has no initPoint
       if (!plan || !plan.initPoint) {
         res.status(404).json({
           error: "Plan not found for redirect",
@@ -224,7 +374,6 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
         return sub;
       });
 
-      // Fix #7: 201 for redirect-path creation (consistent with API path)
       res.status(201).json({
         path: "redirect",
         id: subscription.id,
@@ -245,43 +394,8 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
   }
 });
 
-// GET /a3 — list all a3_plan subscriptions with their webhook events
-a3Router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
-  try {
-    const subscriptions = await db.subscription.findMany({
-      where: { method: "a3_plan" },
-      include: { events: { orderBy: { receivedAt: "desc" } } },
-      orderBy: { createdAt: "desc" },
-    });
-
-    const result = subscriptions.map((s) => ({
-      id: s.id,
-      method: s.method,
-      mpId: s.mpId,
-      status: s.status,
-      externalReference: s.externalReference,
-      payerEmail: s.payerEmail,
-      preapprovalPlanId: s.preapprovalPlanId,
-      tokenization: s.tokenization,
-      initPoint: s.initPoint,
-      rawCreate: tryJsonParse(s.rawCreate),
-      rawLastSearch: tryJsonParse(s.rawLastSearch),
-      createdAt: s.createdAt.toISOString(),
-      events: s.events.map((ev) => ({
-        ...ev,
-        rawBody: tryJsonParse(ev.rawBody as string | null),
-        rawFetched: tryJsonParse(ev.rawFetched as string | null),
-        receivedAt: ev.receivedAt.toISOString(),
-      })),
-    }));
-
-    res.json(result);
-  } catch (err) {
-    next(err);
-  }
-});
-
 // GET /a3/:id/mp — fetch live MP state for a subscription, update rawLastSearch, return result
+// Registered BEFORE /:id to avoid shadowing
 a3Router.get(
   "/:id/mp",
   async (req: Request, res: Response, next: NextFunction) => {
@@ -341,7 +455,7 @@ a3Router.get(
 );
 
 // GET /a3/:id — detail view: subscription + unified timeline
-// /:id/mp and /plans are separate path shapes and are not shadowed by this single-segment route
+// /plans/* and /:id/mp are registered above and are not shadowed by this single-segment route
 a3Router.get(
   "/:id",
   async (req: Request, res: Response, next: NextFunction) => {
@@ -399,3 +513,39 @@ a3Router.get(
     }
   },
 );
+
+// GET /a3/ — list all a3_plan subscriptions with their webhook events
+a3Router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const subscriptions = await db.subscription.findMany({
+      where: { method: "a3_plan" },
+      include: { events: { orderBy: { receivedAt: "desc" } } },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const result = subscriptions.map((s) => ({
+      id: s.id,
+      method: s.method,
+      mpId: s.mpId,
+      status: s.status,
+      externalReference: s.externalReference,
+      payerEmail: s.payerEmail,
+      preapprovalPlanId: s.preapprovalPlanId,
+      tokenization: s.tokenization,
+      initPoint: s.initPoint,
+      rawCreate: tryJsonParse(s.rawCreate),
+      rawLastSearch: tryJsonParse(s.rawLastSearch),
+      createdAt: s.createdAt.toISOString(),
+      events: s.events.map((ev) => ({
+        ...ev,
+        rawBody: tryJsonParse(ev.rawBody as string | null),
+        rawFetched: tryJsonParse(ev.rawFetched as string | null),
+        receivedAt: ev.receivedAt.toISOString(),
+      })),
+    }));
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
