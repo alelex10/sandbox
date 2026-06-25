@@ -1,5 +1,5 @@
 /** Shared configuration for every Mercado Pago implementation. */
-export interface MercadoPagoConfig {
+export interface MercadoPagoProviderConfig {
   /** Access token from your Mercado Pago application credentials. */
   accessToken: string;
   /** URL Mercado Pago should call back on payment status changes. */

@@ -3,7 +3,7 @@ import type {
   PaymentRequest,
   PaymentResult,
 } from "../payment-provider.js";
-import type { MercadoPagoConfig } from "./config.js";
+import type { MercadoPagoProviderConfig } from "./config.js";
 
 /**
  * Mercado Pago implementation backed by raw HTTP calls to the REST API
@@ -19,7 +19,7 @@ export class MercadoPagoHttpProvider implements PaymentProvider {
 
   private readonly baseUrl = "https://api.mercadopago.com";
 
-  constructor(private readonly config: MercadoPagoConfig) {}
+  constructor(private readonly config: MercadoPagoProviderConfig) {}
 
   async createPayment(_request: PaymentRequest): Promise<PaymentResult> {
     // TODO: POST /checkout/preferences with the access token and map the response.

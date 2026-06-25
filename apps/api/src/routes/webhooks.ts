@@ -88,15 +88,32 @@ webhooksRouter.post(
   },
 );
 
-// GET /webhooks?method= — list events, optionally filtered by method
+// GET /webhooks?method= — list events, optionally filtered by method.
+// Special value "unattributed" returns events where method IS NULL or "unknown".
 webhooksRouter.get("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const method = req.query.method as string | undefined;
+
     const events = await db.webhookEvent.findMany({
-      where: method ? { method } : undefined,
+      where:
+        method === "unattributed"
+          ? { OR: [{ method: null }, { method: "unknown" }] }
+          : method
+            ? { method }
+            : undefined,
       orderBy: { receivedAt: "desc" },
+      take: 200,
     });
-    res.json(events);
+
+    // Parse-on-read: rawBody and rawFetched are stored as JSON strings.
+    // Return parsed objects so callers don't have to double-decode.
+    const parsed = events.map((ev) => ({
+      ...ev,
+      rawBody: tryJsonParse(ev.rawBody as string | null),
+      rawFetched: tryJsonParse(ev.rawFetched as string | null),
+    }));
+
+    res.json(parsed);
   } catch (err) {
     next(err);
   }
@@ -105,6 +122,17 @@ webhooksRouter.get("/", async (req: Request, res: Response, next: NextFunction) 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** Null-safe JSON.parse. Returns the parsed value, or the raw string if parse
+ * fails, or null if the input is null/undefined. */
+function tryJsonParse(value: string | null | undefined): unknown {
+  if (value == null) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
 
 function topicToResourcePath(
   topic: string,
@@ -117,6 +145,7 @@ function topicToResourcePath(
       return `/authorized_payments/${resourceId}`;
     case "subscription_preapproval_plan":
       return `/preapproval_plan/${resourceId}`;
+    case "payment":
     case "payments":
       return `/v1/payments/${resourceId}`;
     case "orders":

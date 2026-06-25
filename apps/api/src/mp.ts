@@ -7,9 +7,13 @@ const MP_API_BASE = "https://api.mercadopago.com";
  * Call this once per request or reuse a module-level singleton — both are safe.
  */
 export function mpClient(): MercadoPagoConfig {
-  return new MercadoPagoConfig({
-    accessToken: process.env.MP_ACCESS_TOKEN!,
-  });
+  const token = process.env.MP_ACCESS_TOKEN;
+  if (!token) {
+    throw new Error(
+      "MP_ACCESS_TOKEN is not set — create .env at repo root from .env.example",
+    );
+  }
+  return new MercadoPagoConfig({ accessToken: token });
 }
 
 /**
@@ -19,12 +23,18 @@ export async function mpFetch(
   path: string,
   init: RequestInit = {},
 ): Promise<unknown> {
+  const token = process.env.MP_ACCESS_TOKEN;
+  if (!token) {
+    throw new Error(
+      "MP_ACCESS_TOKEN is not set — create .env at repo root from .env.example",
+    );
+  }
   const url = `${MP_API_BASE}${path}`;
   const res = await fetch(url, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN!}`,
+      Authorization: `Bearer ${token}`,
       ...init.headers,
     },
   });

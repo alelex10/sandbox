@@ -7,6 +7,8 @@ const TOPIC_MAP: Record<string, WebhookClassification> = {
   subscription_preapproval: { category: "subscription", method: null },
   subscription_authorized_payment: { category: "payment", method: "a2_authorized" },
   subscription_preapproval_plan: { category: "plan", method: "a3_plan" },
+  // "payment" is MP's actual webhook `type` field (singular); "payments" is the legacy topic value
+  payment: { category: "payment", method: null },
   payments: { category: "payment", method: null },
   orders: { category: "order", method: "b_orders" },
 };

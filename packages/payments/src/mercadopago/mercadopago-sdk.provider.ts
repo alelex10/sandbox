@@ -3,7 +3,7 @@ import type {
   PaymentRequest,
   PaymentResult,
 } from "../payment-provider.js";
-import type { MercadoPagoConfig } from "./config.js";
+import type { MercadoPagoProviderConfig } from "./config.js";
 
 /**
  * Mercado Pago implementation backed by the official `mercadopago` SDK.
@@ -16,7 +16,7 @@ import type { MercadoPagoConfig } from "./config.js";
 export class MercadoPagoSdkProvider implements PaymentProvider {
   readonly name = "mercadopago-sdk";
 
-  constructor(private readonly config: MercadoPagoConfig) {}
+  constructor(private readonly config: MercadoPagoProviderConfig) {}
 
   async createPayment(_request: PaymentRequest): Promise<PaymentResult> {
     // TODO: use the official SDK (Preference/Payment) to create the payment.

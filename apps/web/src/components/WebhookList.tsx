@@ -9,12 +9,17 @@ interface WebhookListProps {
 
 export function WebhookList({ method, pollIntervalMs = 5000 }: WebhookListProps) {
   const [events, setEvents] = useState<WebhookEventResponse[]>([]);
+  const [unattributed, setUnattributed] = useState<WebhookEventResponse[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const fetchEvents = useCallback(async () => {
     try {
-      const data = await listWebhooks(method);
+      const [data, unattributedData] = await Promise.all([
+        listWebhooks(method),
+        listWebhooks("unattributed"),
+      ]);
       setEvents(data);
+      setUnattributed(unattributedData);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch webhooks");
@@ -28,7 +33,8 @@ export function WebhookList({ method, pollIntervalMs = 5000 }: WebhookListProps)
   }, [fetchEvents, pollIntervalMs]);
 
   const attributed = events.filter((e) => e.method !== null);
-  const unclassified = events.filter((e) => e.method === null);
+  // Merge unattributed bucket (method=null/unknown) from dedicated API call
+  const unclassified = unattributed;
 
   return (
     <div className="mt-6">
@@ -59,7 +65,7 @@ export function WebhookList({ method, pollIntervalMs = 5000 }: WebhookListProps)
         </div>
       )}
 
-      {events.length === 0 && !error && (
+      {events.length === 0 && unattributed.length === 0 && !error && (
         <p className="text-sm text-gray-400">No events yet.</p>
       )}
     </div>

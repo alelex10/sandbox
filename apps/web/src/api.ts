@@ -32,7 +32,7 @@ async function get<T>(path: string): Promise<T> {
 // ---------------------------------------------------------------------------
 
 export function listWebhooks(
-  method?: SubscriptionMethod,
+  method?: SubscriptionMethod | "unattributed",
 ): Promise<WebhookEventResponse[]> {
   const qs = method ? `?method=${encodeURIComponent(method)}` : "";
   return get<WebhookEventResponse[]>(`/webhooks${qs}`);

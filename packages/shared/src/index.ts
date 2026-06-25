@@ -99,6 +99,7 @@ export const WebhookEventResponse = z.object({
   category: z.string(),
   action: z.string().nullable(),
   mpResourceId: z.string().nullable(),
+  subscriptionId: z.string().nullable(),
   rawBody: z.unknown(),
   rawFetched: z.unknown().nullable(),
   receivedAt: z.string(),

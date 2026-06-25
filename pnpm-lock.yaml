@@ -96,6 +96,9 @@ importers:
 
   packages/payments:
     dependencies:
+      mercadopago:
+        specifier: ^3.1.0
+        version: 3.1.0
       zod:
         specifier: ^3.23.0
         version: 3.25.76
