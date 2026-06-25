@@ -1,19 +1,14 @@
 import { MercadoPagoConfig } from "mercadopago";
+import { env } from "./config.js";
 
 const MP_API_BASE = "https://api.mercadopago.com";
 
 /**
- * Returns a new SDK config instance using the MP_ACCESS_TOKEN env var.
+ * Returns a new SDK config instance using the validated MP_ACCESS_TOKEN env var.
  * Call this once per request or reuse a module-level singleton — both are safe.
  */
 export function mpClient(): MercadoPagoConfig {
-  const token = process.env.MP_ACCESS_TOKEN;
-  if (!token) {
-    throw new Error(
-      "MP_ACCESS_TOKEN is not set — create .env at repo root from .env.example",
-    );
-  }
-  return new MercadoPagoConfig({ accessToken: token });
+  return new MercadoPagoConfig({ accessToken: env.MP_ACCESS_TOKEN });
 }
 
 /**
@@ -23,18 +18,12 @@ export async function mpFetch(
   path: string,
   init: RequestInit = {},
 ): Promise<unknown> {
-  const token = process.env.MP_ACCESS_TOKEN;
-  if (!token) {
-    throw new Error(
-      "MP_ACCESS_TOKEN is not set — create .env at repo root from .env.example",
-    );
-  }
   const url = `${MP_API_BASE}${path}`;
   const res = await fetch(url, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${env.MP_ACCESS_TOKEN}`,
       ...init.headers,
     },
   });
@@ -46,9 +35,9 @@ export async function mpFetch(
 }
 
 export function getMpNotificationUrl(): string | undefined {
-  return process.env.MP_NOTIFICATION_URL || undefined;
+  return env.MP_NOTIFICATION_URL;
 }
 
 export function getMpBackUrl(): string | undefined {
-  return process.env.MP_BACK_URL || undefined;
+  return env.MP_BACK_URL;
 }

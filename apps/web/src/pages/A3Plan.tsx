@@ -3,12 +3,14 @@ import { ResponsePanel } from "../components/ResponsePanel.js";
 import { WebhookList } from "../components/WebhookList.js";
 import { CardFormMpJs } from "../components/CardFormMpJs.js";
 import { CardBrick } from "../components/CardBrick.js";
+import { ConfigErrorDisplay } from "../components/ConfigError.js";
 import {
   createPlan,
   listA3Plans,
   subscribeToPlan,
   listA3,
   searchA3,
+  ConfigError,
 } from "../api.js";
 import type {
   PlanResponse,
@@ -52,7 +54,7 @@ function CreatePlanSection({
     billingDay: "",
   });
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
   const [result, setResult] = useState<PlanResponse | null>(null);
 
   function handleChange(
@@ -82,7 +84,7 @@ function CreatePlanSection({
       setResult(created);
       onPlanCreated(created);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
+      setError(err instanceof Error ? err : new Error("Request failed"));
     } finally {
       setSubmitting(false);
     }
@@ -211,9 +213,15 @@ function CreatePlanSection({
         </fieldset>
 
         {error && (
-          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-            {error}
-          </p>
+          <>
+            {error instanceof ConfigError ? (
+              <ConfigErrorDisplay error={error} />
+            ) : (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+                {error.message}
+              </p>
+            )}
+          </>
         )}
 
         <button
@@ -324,7 +332,7 @@ function SubscribeSection({
   const [tokenSource, setTokenSource] = useState<Tokenization | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
   const [result, setResult] = useState<SubscribeResult | null>(null);
 
   // Fix #2: look up selected plan by mpPlanId only — never by local id
@@ -341,12 +349,12 @@ function SubscribeSection({
     setError(null);
 
     if (!selectedPlanMpId) {
-      setError("Select a plan first.");
+      setError(new Error("Select a plan first."));
       return;
     }
 
     if (subscribePath === "api" && !cardTokenId) {
-      setError("Tokenize the card first using one of the methods above.");
+      setError(new Error("Tokenize the card first using one of the methods above."));
       return;
     }
 
@@ -370,7 +378,7 @@ function SubscribeSection({
       setTokenSource(null);
       onSubscribed();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
+      setError(err instanceof Error ? err : new Error("Request failed"));
     } finally {
       setSubmitting(false);
     }
@@ -542,9 +550,15 @@ function SubscribeSection({
         )}
 
         {error && (
-          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-            {error}
-          </p>
+          <>
+            {error instanceof ConfigError ? (
+              <ConfigErrorDisplay error={error} />
+            ) : (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+                {error.message}
+              </p>
+            )}
+          </>
         )}
 
         <button

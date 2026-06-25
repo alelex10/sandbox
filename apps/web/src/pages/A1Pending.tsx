@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { ResponsePanel } from "../components/ResponsePanel.js";
 import { WebhookList } from "../components/WebhookList.js";
-import { createA1, searchA1, listA1 } from "../api.js";
+import { ConfigErrorDisplay } from "../components/ConfigError.js";
+import { createA1, searchA1, listA1, ConfigError } from "../api.js";
 import type { SubscriptionResponse } from "shared";
 
 interface FormState {
@@ -45,7 +46,7 @@ export function A1Pending() {
   });
 
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
   const [createResult, setCreateResult] = useState<SubscriptionResponse | null>(null);
   const [searchResult, setSearchResult] = useState<unknown>(null);
   const [searching, setSearching] = useState(false);
@@ -96,7 +97,7 @@ export function A1Pending() {
       setSearchResult(null);
       void fetchHistory();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
+      setError(err instanceof Error ? err : new Error("Request failed"));
     } finally {
       setSubmitting(false);
     }
@@ -110,7 +111,7 @@ export function A1Pending() {
       const result = await searchA1(createResult.id);
       setSearchResult(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Search failed");
+      setError(err instanceof Error ? err : new Error("Search failed"));
     } finally {
       setSearching(false);
     }
@@ -272,9 +273,15 @@ export function A1Pending() {
         </fieldset>
 
         {error && (
-          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-            {error}
-          </p>
+          <>
+            {error instanceof ConfigError ? (
+              <ConfigErrorDisplay error={error} />
+            ) : (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+                {error.message}
+              </p>
+            )}
+          </>
         )}
 
         <button

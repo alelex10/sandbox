@@ -6,3 +6,4 @@ export * from "./mercadopago/webhooks/classify.js";
 export * from "./mercadopago/subscriptions/a1-pending.js";
 export * from "./mercadopago/subscriptions/a2-authorized.js";
 export * from "./mercadopago/subscriptions/a3-plan.js";
+export * from "./mercadopago/subscriptions/b-orders.js";

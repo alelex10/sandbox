@@ -3,7 +3,8 @@ import { ResponsePanel } from "../components/ResponsePanel.js";
 import { WebhookList } from "../components/WebhookList.js";
 import { CardFormMpJs } from "../components/CardFormMpJs.js";
 import { CardBrick } from "../components/CardBrick.js";
-import { createA2, searchA2, listA2 } from "../api.js";
+import { ConfigErrorDisplay } from "../components/ConfigError.js";
+import { createA2, searchA2, listA2, ConfigError } from "../api.js";
 import type { SubscriptionResponse, Tokenization } from "shared";
 
 const PUBLIC_KEY = import.meta.env.VITE_MP_PUBLIC_KEY as string;
@@ -57,7 +58,7 @@ export function A2Authorized() {
   });
 
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
   const [createResult, setCreateResult] = useState<SubscriptionResponse | null>(null);
   const [searchResult, setSearchResult] = useState<unknown>(null);
   const [searching, setSearching] = useState(false);
@@ -93,7 +94,7 @@ export function A2Authorized() {
     setError(null);
 
     if (!cardTokenId || !tokenSource) {
-      setError("Tokenize the card first using one of the methods above.");
+      setError(new Error("Tokenize the card first using one of the methods above."));
       return;
     }
 
@@ -127,7 +128,7 @@ export function A2Authorized() {
       setTokenSource(null);
       void fetchHistory();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
+      setError(err instanceof Error ? err : new Error("Request failed"));
     } finally {
       setSubmitting(false);
     }
@@ -141,7 +142,7 @@ export function A2Authorized() {
       const result = await searchA2(createResult.id);
       setSearchResult(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Search failed");
+      setError(err instanceof Error ? err : new Error("Search failed"));
     } finally {
       setSearching(false);
     }
@@ -359,9 +360,15 @@ export function A2Authorized() {
         </fieldset>
 
         {error && (
-          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-            {error}
-          </p>
+          <>
+            {error instanceof ConfigError ? (
+              <ConfigErrorDisplay error={error} />
+            ) : (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+                {error.message}
+              </p>
+            )}
+          </>
         )}
 
         <button

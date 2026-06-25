@@ -3,6 +3,7 @@ import type { SubscriptionMethod } from "shared";
 import { A1Pending } from "./pages/A1Pending.js";
 import { A2Authorized } from "./pages/A2Authorized.js";
 import { A3Plan } from "./pages/A3Plan.js";
+import { BOrders } from "./pages/BOrders.js";
 
 const TABS: { label: string; value: SubscriptionMethod }[] = [
   { label: "A.1 Preapproval Pending", value: "a1_pending" },
@@ -60,6 +61,8 @@ export function App() {
           <A2Authorized />
         ) : activeMethod === "a3_plan" ? (
           <A3Plan />
+        ) : activeMethod === "b_orders" ? (
+          <BOrders />
         ) : (
           <PlaceholderPage method={activeMethod} />
         )}

@@ -6,7 +6,20 @@ import type {
   CreatePlanRequest,
   SubscribeToPlanRequest,
   SubscriptionResponse,
+  CreatePaymentProfileRequest,
+  ChargeOrderRequest,
 } from "shared";
+
+export class ConfigError extends Error {
+  isConfigError = true;
+  details?: string[];
+
+  constructor(message: string, details?: string[]) {
+    super(message);
+    this.name = "ConfigError";
+    this.details = details;
+  }
+}
 
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
@@ -18,7 +31,14 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((err as { error?: string }).error ?? res.statusText);
+    const errorData = err as { error?: string; details?: string[]; message?: string };
+    
+    // Handle configuration errors specifically
+    if (errorData.error === "Configuration error") {
+      throw new ConfigError(errorData.message || "Server configuration error", errorData.details);
+    }
+    
+    throw new Error(errorData.error ?? res.statusText);
   }
   return res.json() as Promise<T>;
 }
@@ -27,7 +47,14 @@ async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${API}${path}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((err as { error?: string }).error ?? res.statusText);
+    const errorData = err as { error?: string; details?: string[]; message?: string };
+    
+    // Handle configuration errors specifically
+    if (errorData.error === "Configuration error") {
+      throw new ConfigError(errorData.message || "Server configuration error", errorData.details);
+    }
+    
+    throw new Error(errorData.error ?? res.statusText);
   }
   return res.json() as Promise<T>;
 }
@@ -125,6 +152,63 @@ export function listA3(): Promise<SubscriptionResponse[]> {
 
 export function searchA3(id: string): Promise<unknown> {
   return get<unknown>(`/a3/${encodeURIComponent(id)}/mp`);
+}
+
+// ---------------------------------------------------------------------------
+// B — Orders / Automatic Payments
+// ---------------------------------------------------------------------------
+
+export interface OrderChargeResponse {
+  id: string;
+  subscriptionId: string;
+  mpOrderId: string | null;
+  amount: number;
+  status: string | null;
+  sequenceNumber: number | null;
+  rawResponse: unknown;
+  createdAt: string;
+}
+
+export interface BSubscriptionResponse {
+  id: string;
+  method: string;
+  status: string | null;
+  paymentProfileId: string | null;
+  customerId: string | null;
+  tokenization: string | null;
+  rawCreate: unknown;
+  createdAt: string;
+  charges: OrderChargeResponse[];
+  events: WebhookEventResponse[];
+}
+
+export interface CreateProfileResponse {
+  id: string;
+  method: string;
+  status: string | null;
+  paymentProfileId: string | null;
+  customerId: string | null;
+  tokenization: string | null;
+  rawCreate: unknown;
+  createdAt: string;
+}
+
+export function createProfile(
+  body: CreatePaymentProfileRequest,
+): Promise<CreateProfileResponse> {
+  return post<CreateProfileResponse>("/b/profiles", body);
+}
+
+export function chargeNow(body: ChargeOrderRequest): Promise<OrderChargeResponse> {
+  return post<OrderChargeResponse>("/b/charge", body);
+}
+
+export function listB(): Promise<BSubscriptionResponse[]> {
+  return get<BSubscriptionResponse[]>("/b");
+}
+
+export function listCharges(subscriptionId: string): Promise<OrderChargeResponse[]> {
+  return get<OrderChargeResponse[]>(`/b/${encodeURIComponent(subscriptionId)}/charges`);
 }
 
 export { post, get };
