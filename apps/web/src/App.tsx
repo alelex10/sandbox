@@ -31,7 +31,7 @@ export function App() {
       </header>
 
       {/* Tab bar */}
-      <nav className="bg-white border-b border-gray-200 px-6">
+      <nav className="bg-white border-b border-gray-200 px-4 lg:px-8">
         <ul className="flex gap-1" role="tablist">
           {TABS.map((tab) => (
             <li key={tab.value} role="presentation">
@@ -54,7 +54,7 @@ export function App() {
       </nav>
 
       {/* Page panel */}
-      <main>
+      <main className="max-w-7xl mx-auto px-4 lg:px-8 py-6">
         {activeMethod === "a1_pending" ? (
           <A1Pending />
         ) : activeMethod === "a2_authorized" ? (

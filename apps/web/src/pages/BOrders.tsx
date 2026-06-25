@@ -1,27 +1,46 @@
 import { useState, useEffect, useCallback } from "react";
 import { ResponsePanel } from "../components/ResponsePanel.js";
 import { WebhookList } from "../components/WebhookList.js";
+import { TimelineView } from "../components/TimelineView.js";
+import { Card } from "../components/Card.js";
 import { CardFormMpJs } from "../components/CardFormMpJs.js";
 import { CardBrick } from "../components/CardBrick.js";
 import {
   createProfile,
   chargeNow,
   listB,
-  listCharges,
+  getBDetail,
 } from "../api.js";
 import type {
   BSubscriptionResponse,
   OrderChargeResponse,
   CreateProfileResponse,
 } from "../api.js";
-import type { Tokenization } from "shared";
+import type { SubscriptionDetailResponse, Tokenization } from "shared";
 
 const PUBLIC_KEY = import.meta.env.VITE_MP_PUBLIC_KEY as string;
 
 type TokenizationMode = "mercadopagojs" | "brick";
 
+function StatusBadge({ status }: { status: string | null }) {
+  const s = status ?? "unknown";
+  const cls =
+    s === "authorized"
+      ? "bg-green-100 text-green-700"
+      : s === "active"
+        ? "bg-green-100 text-green-700"
+        : s === "pending"
+          ? "bg-yellow-100 text-yellow-700"
+          : s === "cancelled"
+            ? "bg-red-100 text-red-700"
+            : "bg-gray-100 text-gray-600";
+  return (
+    <span className={`text-xs rounded px-1.5 py-0.5 font-medium ${cls}`}>{s}</span>
+  );
+}
+
 // ---------------------------------------------------------------------------
-// Section 1 — Register payment method (create profile)
+// Register payment method section
 // ---------------------------------------------------------------------------
 
 function RegisterProfileSection({
@@ -29,13 +48,11 @@ function RegisterProfileSection({
 }: {
   onProfileCreated: () => void;
 }) {
-  const [tokenizationMode, setTokenizationMode] =
-    useState<TokenizationMode>("mercadopagojs");
+  const [tokenizationMode, setTokenizationMode] = useState<TokenizationMode>("mercadopagojs");
   const [cardTokenId, setCardTokenId] = useState<string | null>(null);
   const [tokenSource, setTokenSource] = useState<Tokenization | null>(null);
   const [paymentMethodId, setPaymentMethodId] = useState("visa");
   const [cardType, setCardType] = useState<"credit_card" | "debit_card">("credit_card");
-
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CreateProfileResponse | null>(null);
@@ -49,12 +66,10 @@ function RegisterProfileSection({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-
     if (!cardTokenId || !tokenSource) {
       setError("Tokenize the card first using one of the methods above.");
       return;
     }
-
     setSubmitting(true);
     try {
       const created = await createProfile({
@@ -64,7 +79,6 @@ function RegisterProfileSection({
         cardType,
       });
       setResult(created);
-      // Token is single-use — clear after POST
       setCardTokenId(null);
       setTokenSource(null);
       onProfileCreated();
@@ -76,36 +90,20 @@ function RegisterProfileSection({
   }
 
   return (
-    <section className="mb-10">
-      <h3 className="text-base font-semibold text-gray-900 mb-1">
-        Sección 1 — Registrar medio de pago
-      </h3>
-      <p className="text-sm text-gray-500 mb-4">
-        Tokenize a card and register it as a stored payment profile via{" "}
-        <code className="text-xs bg-gray-100 px-1 rounded">
-          POST /v1/profiles/payment
-        </code>
-        . The returned{" "}
-        <code className="text-xs bg-gray-100 px-1 rounded">
-          payment_profile_id
-        </code>{" "}
-        is used for future charges.
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500">
+        Tokenize a card and register it via{" "}
+        <code className="text-xs bg-gray-100 px-1 rounded">POST /v1/profiles/payment</code>.
+        The returned <code className="text-xs bg-gray-100 px-1 rounded">payment_profile_id</code> is used for charges.
       </p>
-
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Tokenization method selector */}
+        {/* Tokenization selector */}
         <div>
-          <p className="text-sm font-medium text-gray-700 mb-2">
-            Tokenization method
-          </p>
+          <p className="text-sm font-medium text-gray-700 mb-2">Tokenization method</p>
           <div className="flex gap-2 mb-4">
             <button
               type="button"
-              onClick={() => {
-                setTokenizationMode("mercadopagojs");
-                setCardTokenId(null);
-                setTokenSource(null);
-              }}
+              onClick={() => { setTokenizationMode("mercadopagojs"); setCardTokenId(null); setTokenSource(null); }}
               className={[
                 "px-4 py-2 rounded text-sm font-medium border transition-colors",
                 tokenizationMode === "mercadopagojs"
@@ -117,11 +115,7 @@ function RegisterProfileSection({
             </button>
             <button
               type="button"
-              onClick={() => {
-                setTokenizationMode("brick");
-                setCardTokenId(null);
-                setTokenSource(null);
-              }}
+              onClick={() => { setTokenizationMode("brick"); setCardTokenId(null); setTokenSource(null); }}
               className={[
                 "px-4 py-2 rounded text-sm font-medium border transition-colors",
                 tokenizationMode === "brick"
@@ -132,33 +126,23 @@ function RegisterProfileSection({
               Card Payment Brick
             </button>
           </div>
-
           <div className="border border-gray-200 rounded p-4 bg-gray-50">
             {tokenizationMode === "mercadopagojs" ? (
               <CardFormMpJs publicKey={PUBLIC_KEY} onToken={handleToken} />
             ) : (
-              <CardBrick
-                key={`brick-${tokenizationMode}`}
-                publicKey={PUBLIC_KEY}
-                onToken={handleToken}
-              />
+              <CardBrick key={`brick-${tokenizationMode}`} publicKey={PUBLIC_KEY} onToken={handleToken} />
             )}
           </div>
-
           {cardTokenId && (
             <p className="mt-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
-              Card token ready (via{" "}
-              <span className="font-mono">{tokenSource}</span>). Fill in the
-              payment method and submit.
+              Card token ready (via <span className="font-mono">{tokenSource}</span>). Fill in the payment method and submit.
             </p>
           )}
         </div>
 
-        {/* Payment method id */}
+        {/* Payment method */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Payment method id
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Payment method id</label>
           <select
             value={paymentMethodId}
             onChange={(e) => setPaymentMethodId(e.target.value)}
@@ -170,16 +154,12 @@ function RegisterProfileSection({
             <option value="naranja">naranja</option>
             <option value="cabal">cabal</option>
           </select>
-          <p className="text-xs text-gray-400 mt-1">
-            Must match the card brand. MP will reject mismatches.
-          </p>
+          <p className="text-xs text-gray-400 mt-1">Must match the card brand. MP will reject mismatches.</p>
         </div>
 
         {/* Card type */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Tipo de tarjeta
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de tarjeta</label>
           <select
             value={cardType}
             onChange={(e) => setCardType(e.target.value as "credit_card" | "debit_card")}
@@ -191,9 +171,7 @@ function RegisterProfileSection({
         </div>
 
         {error && (
-          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-            {error}
-          </p>
+          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>
         )}
 
         <button
@@ -201,11 +179,7 @@ function RegisterProfileSection({
           disabled={submitting || !cardTokenId}
           className="w-full bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {submitting
-            ? "Registering…"
-            : cardTokenId
-              ? "Register payment method"
-              : "Tokenize card first"}
+          {submitting ? "Registering…" : cardTokenId ? "Register payment method" : "Tokenize card first"}
         </button>
       </form>
 
@@ -213,111 +187,65 @@ function RegisterProfileSection({
         <div className="mt-4 space-y-3">
           {result.paymentProfileId && (
             <div className="bg-green-50 border border-green-200 rounded px-4 py-3">
-              <p className="text-xs font-semibold text-green-700 mb-1 uppercase tracking-wide">
-                Payment profile registered
-              </p>
-              <p className="text-xs text-green-800">
-                Profile ID:{" "}
-                <span className="font-mono break-all">
-                  {result.paymentProfileId}
-                </span>
-              </p>
+              <p className="text-xs font-semibold text-green-700 mb-1 uppercase tracking-wide">Payment profile registered</p>
+              <p className="text-xs text-green-800">Profile ID: <span className="font-mono break-all">{result.paymentProfileId}</span></p>
               {result.customerId && (
-                <p className="text-xs text-green-800 mt-0.5">
-                  Customer ID:{" "}
-                  <span className="font-mono break-all">
-                    {result.customerId}
-                  </span>
-                </p>
+                <p className="text-xs text-green-800 mt-0.5">Customer ID: <span className="font-mono break-all">{result.customerId}</span></p>
               )}
-              <p className="text-xs text-green-800 mt-0.5">
-                Status:{" "}
-                <span className="font-mono">{result.status ?? "—"}</span>
-              </p>
+              <p className="text-xs text-green-800 mt-0.5">Status: <span className="font-mono">{result.status ?? "—"}</span></p>
             </div>
           )}
           <ResponsePanel data={result} />
         </div>
       )}
-    </section>
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Section 2 — Charge now
+// Charge section
 // ---------------------------------------------------------------------------
 
 function ChargeSection({
   subscriptions,
+  selectedId,
   onCharged,
 }: {
   subscriptions: BSubscriptionResponse[];
+  selectedId: string | null;
   onCharged: () => void;
 }) {
-  const [selectedSubId, setSelectedSubId] = useState("");
+  const [selectedSubId, setSelectedSubId] = useState(selectedId ?? "");
   const [amount, setAmount] = useState("");
   const [sequenceNumber, setSequenceNumber] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [chargeResult, setChargeResult] = useState<OrderChargeResponse | null>(
-    null,
-  );
-  const [subCharges, setSubCharges] = useState<OrderChargeResponse[]>([]);
-  const [loadingCharges, setLoadingCharges] = useState(false);
+  const [chargeResult, setChargeResult] = useState<OrderChargeResponse | null>(null);
 
-  // Subscriptions with a valid paymentProfileId can be charged
+  // Mirror parent selection
+  useEffect(() => {
+    if (selectedId && selectedId !== selectedSubId) {
+      setSelectedSubId(selectedId);
+      setChargeResult(null);
+      setError(null);
+    }
+  }, [selectedId, selectedSubId]);
+
   const chargeableSubs = subscriptions.filter((s) => s.paymentProfileId);
-
-  const fetchSubCharges = useCallback(async (id: string) => {
-    setLoadingCharges(true);
-    try {
-      const rows = await listCharges(id);
-      setSubCharges(rows);
-    } catch {
-      // non-critical
-    } finally {
-      setLoadingCharges(false);
-    }
-  }, []);
-
-  function handleSelectSub(id: string) {
-    setSelectedSubId(id);
-    setChargeResult(null);
-    setSubCharges([]);
-    setError(null);
-    if (id) {
-      void fetchSubCharges(id);
-    }
-  }
+  const selectedSub = subscriptions.find((s) => s.id === selectedSubId);
 
   async function handleCharge(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-
-    if (!selectedSubId) {
-      setError("Select a subscription first.");
-      return;
-    }
-
+    if (!selectedSubId) { setError("Select a subscription first."); return; }
     const parsedAmount = parseFloat(amount);
-    if (!parsedAmount || parsedAmount <= 0) {
-      setError("Enter a valid amount greater than 0.");
-      return;
-    }
-
+    if (!parsedAmount || parsedAmount <= 0) { setError("Enter a valid amount greater than 0."); return; }
     setSubmitting(true);
     try {
-      const payload: Parameters<typeof chargeNow>[0] = {
-        subscriptionId: selectedSubId,
-        amount: parsedAmount,
-      };
-      if (sequenceNumber) {
-        payload.sequenceNumber = parseInt(sequenceNumber, 10);
-      }
+      const payload: Parameters<typeof chargeNow>[0] = { subscriptionId: selectedSubId, amount: parsedAmount };
+      if (sequenceNumber) payload.sequenceNumber = parseInt(sequenceNumber, 10);
       const result = await chargeNow(payload);
       setChargeResult(result);
-      // Refresh charge list and main subscriptions table after new charge
-      void fetchSubCharges(selectedSubId);
       onCharged();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Charge failed");
@@ -326,225 +254,117 @@ function ChargeSection({
     }
   }
 
-  const selectedSub = subscriptions.find((s) => s.id === selectedSubId);
+  if (chargeableSubs.length === 0) {
+    return (
+      <p className="text-sm text-gray-500 italic">
+        No subscriptions with a registered payment profile yet — use the Register section first.
+      </p>
+    );
+  }
 
   return (
-    <section>
-      <h3 className="text-base font-semibold text-gray-900 mb-1">
-        Sección 2 — Cobrar ahora
-      </h3>
-      <p className="text-sm text-gray-500 mb-4">
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500">
         Select a registered subscription and trigger a charge via{" "}
         <code className="text-xs bg-gray-100 px-1 rounded">POST /v1/orders</code>.
-        Each charge creates a fresh idempotency key.
       </p>
-
-      {chargeableSubs.length === 0 ? (
-        <p className="text-sm text-gray-500 italic mb-4">
-          No subscriptions with a registered payment profile yet — use Section 1
-          first.
-        </p>
-      ) : (
-        <form onSubmit={handleCharge} className="space-y-4">
-          {/* Subscription picker */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Select subscription
-            </label>
-            <select
-              value={selectedSubId}
-              onChange={(e) => handleSelectSub(e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">— choose a subscription —</option>
-              {chargeableSubs.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.id.slice(0, 8)}… — profile:{" "}
-                  {s.paymentProfileId?.slice(0, 12)}… — status:{" "}
-                  {s.status ?? "?"}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Show selected subscription details */}
-          {selectedSub && (
-            <div className="bg-gray-50 border border-gray-200 rounded px-4 py-3 text-xs text-gray-700 space-y-0.5">
-              <p>
-                <span className="font-medium">Profile ID:</span>{" "}
-                <span className="font-mono break-all">
-                  {selectedSub.paymentProfileId}
-                </span>
-              </p>
-              <p>
-                <span className="font-medium">Customer ID:</span>{" "}
-                <span className="font-mono break-all">
-                  {selectedSub.customerId ?? "—"}
-                </span>
-              </p>
-              <p>
-                <span className="font-medium">Status:</span>{" "}
-                {selectedSub.status ?? "—"}
-              </p>
-              <p>
-                <span className="font-medium">Tokenization:</span>{" "}
-                {selectedSub.tokenization ?? "—"}
-              </p>
-            </div>
-          )}
-
-          {/* Amount */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Amount
-            </label>
-            <input
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              min="0.01"
-              step="0.01"
-              required
-              placeholder="1000.00"
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          {/* Sequence number (optional) */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Sequence number{" "}
-              <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            <input
-              type="number"
-              value={sequenceNumber}
-              onChange={(e) => setSequenceNumber(e.target.value)}
-              min="1"
-              placeholder="e.g. 1 for the first charge in a series"
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          {error && (
-            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-              {error}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={submitting || !selectedSubId || !amount}
-            className="w-full bg-emerald-600 text-white rounded px-4 py-2 text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      <form onSubmit={handleCharge} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Select subscription</label>
+          <select
+            value={selectedSubId}
+            onChange={(e) => { setSelectedSubId(e.target.value); setChargeResult(null); setError(null); }}
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            {submitting ? "Charging…" : "Cobrar ahora"}
-          </button>
-        </form>
-      )}
+            <option value="">— choose a subscription —</option>
+            {chargeableSubs.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.id.slice(0, 8)}… — profile: {s.paymentProfileId?.slice(0, 12)}… — status: {s.status ?? "?"}
+              </option>
+            ))}
+          </select>
+        </div>
 
-      {/* Last charge result */}
+        {selectedSub && (
+          <div className="bg-gray-50 border border-gray-200 rounded px-4 py-3 text-xs text-gray-700 space-y-0.5">
+            <p><span className="font-medium">Profile ID:</span> <span className="font-mono break-all">{selectedSub.paymentProfileId}</span></p>
+            <p><span className="font-medium">Customer ID:</span> <span className="font-mono break-all">{selectedSub.customerId ?? "—"}</span></p>
+            <p><span className="font-medium">Status:</span> {selectedSub.status ?? "—"}</p>
+            <p><span className="font-medium">Tokenization:</span> {selectedSub.tokenization ?? "—"}</p>
+          </div>
+        )}
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+          <input
+            type="number"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            min="0.01"
+            step="0.01"
+            required
+            placeholder="1000.00"
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Sequence number <span className="text-gray-400 font-normal">(optional)</span>
+          </label>
+          <input
+            type="number"
+            value={sequenceNumber}
+            onChange={(e) => setSequenceNumber(e.target.value)}
+            min="1"
+            placeholder="e.g. 1 for the first charge in a series"
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        {error && (
+          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>
+        )}
+
+        <button
+          type="submit"
+          disabled={submitting || !selectedSubId || !amount}
+          className="w-full bg-emerald-600 text-white rounded px-4 py-2 text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {submitting ? "Charging…" : "Cobrar ahora"}
+        </button>
+      </form>
+
       {chargeResult && (
         <div className="mt-4 space-y-3">
           <div className="bg-blue-50 border border-blue-200 rounded px-4 py-3">
-            <p className="text-xs font-semibold text-blue-700 mb-1 uppercase tracking-wide">
-              Charge result
-            </p>
-            <p className="text-xs text-blue-800">
-              Order ID:{" "}
-              <span className="font-mono break-all">
-                {chargeResult.mpOrderId ?? "—"}
-              </span>
-            </p>
-            <p className="text-xs text-blue-800 mt-0.5">
-              Status:{" "}
-              <span className="font-mono">{chargeResult.status ?? "—"}</span>
-            </p>
+            <p className="text-xs font-semibold text-blue-700 mb-1 uppercase tracking-wide">Charge result</p>
+            <p className="text-xs text-blue-800">Order ID: <span className="font-mono break-all">{chargeResult.mpOrderId ?? "—"}</span></p>
+            <p className="text-xs text-blue-800 mt-0.5">Status: <span className="font-mono">{chargeResult.status ?? "—"}</span></p>
           </div>
           <ResponsePanel data={chargeResult} />
         </div>
       )}
-
-      {/* Charges history for selected subscription */}
-      {selectedSubId && (
-        <div className="mt-6">
-          <h4 className="text-sm font-semibold text-gray-700 mb-2">
-            Charges for this subscription
-          </h4>
-          {loadingCharges ? (
-            <p className="text-xs text-gray-400">Loading charges…</p>
-          ) : subCharges.length === 0 ? (
-            <p className="text-xs text-gray-400 italic">
-              No charges yet for this subscription.
-            </p>
-          ) : (
-            <div className="overflow-x-auto rounded border border-gray-200">
-              <table className="min-w-full text-xs text-gray-700">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium text-gray-500">
-                      Charge ID
-                    </th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-500">
-                      Amount
-                    </th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-500">
-                      Status
-                    </th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-500">
-                      MP Order ID
-                    </th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-500">
-                      Seq #
-                    </th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-500">
-                      Created at
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {subCharges.map((c) => (
-                    <tr key={c.id} className="hover:bg-gray-50">
-                      <td className="px-3 py-2 font-mono break-all">
-                        {c.id}
-                      </td>
-                      <td className="px-3 py-2">{c.amount}</td>
-                      <td className="px-3 py-2">{c.status ?? "—"}</td>
-                      <td className="px-3 py-2 font-mono break-all">
-                        {c.mpOrderId ?? "—"}
-                      </td>
-                      <td className="px-3 py-2">
-                        {c.sequenceNumber ?? "—"}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {c.createdAt}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-    </section>
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// BOrders — main page component
+// BOrders page
 // ---------------------------------------------------------------------------
 
 export function BOrders() {
-  const [subscriptions, setSubscriptions] = useState<BSubscriptionResponse[]>(
-    [],
-  );
+  const [subscriptions, setSubscriptions] = useState<BSubscriptionResponse[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<SubscriptionDetailResponse | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const fetchSubscriptions = useCallback(async () => {
     try {
       const rows = await listB();
       setSubscriptions(rows);
     } catch {
-      // non-critical — ignore
+      // non-critical
     }
   }, []);
 
@@ -552,94 +372,166 @@ export function BOrders() {
     void fetchSubscriptions();
   }, [fetchSubscriptions]);
 
+  const fetchDetail = useCallback(async (id: string) => {
+    setDetailLoading(true);
+    try {
+      const d = await getBDetail(id);
+      setDetail(d);
+    } catch {
+      // non-critical
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
+
+  function selectSubscription(id: string) {
+    if (selectedId === id) return;
+    setSelectedId(id);
+    setDetail(null);
+    void fetchDetail(id);
+  }
+
+  function handleProfileCreated() {
+    void fetchSubscriptions();
+  }
+
+  function handleCharged() {
+    void fetchSubscriptions();
+    if (selectedId) void fetchDetail(selectedId);
+  }
+
+  const selectedSub = subscriptions.find((s) => s.id === selectedId);
+
   return (
-    <div className="p-6 max-w-2xl mx-auto">
-      <h2 className="text-xl font-semibold text-gray-900 mb-1">
-        B — Orders / Automatic Payments
-      </h2>
-      <p className="text-sm text-gray-500 mb-8">
-        Register a card once (
-        <code className="text-xs bg-gray-100 px-1 rounded">
-          POST /v1/profiles/payment
-        </code>
-        ), then trigger charges on demand (
-        <code className="text-xs bg-gray-100 px-1 rounded">
-          POST /v1/orders
-        </code>
-        ). MP does not manage the schedule — you control each charge.
-      </p>
+    <div>
+      <div className="mb-4">
+        <h2 className="text-xl font-semibold text-gray-900 mb-1">B — Orders / Automatic Payments</h2>
+        <p className="text-sm text-gray-500">
+          Register a card once (<code className="text-xs bg-gray-100 px-1 rounded">POST /v1/profiles/payment</code>),
+          then trigger charges on demand (<code className="text-xs bg-gray-100 px-1 rounded">POST /v1/orders</code>).
+          MP does not manage the schedule — you control each charge.
+        </p>
+      </div>
 
-      <RegisterProfileSection
-        onProfileCreated={() => {
-          void fetchSubscriptions();
-        }}
-      />
-
-      <hr className="border-gray-200 my-8" />
-
-      <ChargeSection subscriptions={subscriptions} onCharged={fetchSubscriptions} />
-
-      <hr className="border-gray-200 my-8" />
-
-      {/* Medios de pago registrados (all b_orders subscriptions) */}
-      {subscriptions.length > 0 && (
-        <div className="mb-8">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">
-            Medios de pago registrados
-          </h3>
-          <div className="overflow-x-auto rounded border border-gray-200">
-            <table className="min-w-full text-xs text-gray-700">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">
-                    ID
-                  </th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">
-                    Status
-                  </th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">
-                    Profile ID
-                  </th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">
-                    Customer ID
-                  </th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">
-                    Tokenization
-                  </th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">
-                    Charges
-                  </th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">
-                    Created at
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {subscriptions.map((s) => (
-                  <tr key={s.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 font-mono break-all">{s.id}</td>
-                    <td className="px-3 py-2">{s.status ?? "—"}</td>
-                    <td className="px-3 py-2 font-mono break-all">
-                      {s.paymentProfileId ?? "—"}
-                    </td>
-                    <td className="px-3 py-2 font-mono break-all">
-                      {s.customerId ?? "—"}
-                    </td>
-                    <td className="px-3 py-2">{s.tokenization ?? "—"}</td>
-                    <td className="px-3 py-2">{s.charges.length}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {s.createdAt}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <div className="grid grid-cols-1 lg:grid-cols-[18rem_1fr] gap-6">
+        {/* ── Left sidebar ── */}
+        <aside className="space-y-2">
+          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900">Suscripciones</h3>
+              <span className="text-xs text-gray-400">{subscriptions.length}</span>
+            </div>
+            <ul className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+              {subscriptions.length === 0 && (
+                <li className="px-4 py-3 text-xs text-gray-400 italic">None yet.</li>
+              )}
+              {subscriptions.map((sub) => (
+                <li key={sub.id}>
+                  <button
+                    type="button"
+                    onClick={() => selectSubscription(sub.id)}
+                    className={[
+                      "w-full text-left px-4 py-3 text-xs hover:bg-gray-50 transition-colors",
+                      selectedId === sub.id ? "bg-blue-50 border-l-2 border-blue-500" : "",
+                    ].join(" ")}
+                  >
+                    <div className="font-mono text-gray-700 truncate">{sub.id.slice(0, 16)}…</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <StatusBadge status={sub.status} />
+                      <span className="text-gray-400">{sub.charges.length} charges</span>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
-        </div>
-      )}
+        </aside>
 
-      {/* Webhook events */}
-      <WebhookList method="b_orders" />
+        {/* ── Right main column ── */}
+        <div className="space-y-4 min-w-0">
+          {/* Register profile card */}
+          <Card title="Sección 1 — Registrar medio de pago">
+            <RegisterProfileSection onProfileCreated={handleProfileCreated} />
+          </Card>
+
+          {/* Charge card */}
+          <Card title="Sección 2 — Cobrar ahora">
+            <ChargeSection
+              subscriptions={subscriptions}
+              selectedId={selectedId}
+              onCharged={handleCharged}
+            />
+          </Card>
+
+          {/* Medios de pago table */}
+          {subscriptions.length > 0 && (
+            <Card title="Medios de pago registrados">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-xs text-gray-700">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">ID</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">Status</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">Profile ID</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">Customer ID</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">Tokenization</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">Charges</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-500">Created at</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {subscriptions.map((s) => (
+                      <tr
+                        key={s.id}
+                        className={`hover:bg-gray-50 cursor-pointer ${selectedId === s.id ? "bg-blue-50" : ""}`}
+                        onClick={() => selectSubscription(s.id)}
+                      >
+                        <td className="px-3 py-2 font-mono break-all">{s.id}</td>
+                        <td className="px-3 py-2">{s.status ?? "—"}</td>
+                        <td className="px-3 py-2 font-mono break-all">{s.paymentProfileId ?? "—"}</td>
+                        <td className="px-3 py-2 font-mono break-all">{s.customerId ?? "—"}</td>
+                        <td className="px-3 py-2">{s.tokenization ?? "—"}</td>
+                        <td className="px-3 py-2">{s.charges.length}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">{s.createdAt}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+
+          {/* Timeline card */}
+          <Card title="Timeline">
+            {selectedSub ? (
+              <div>
+                <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
+                  <span className="text-xs text-gray-500 font-mono">{selectedSub.id}</span>
+                  <StatusBadge status={selectedSub.status} />
+                  <span className="text-xs text-gray-400">{selectedSub.charges.length} charges</span>
+                </div>
+                <TimelineView
+                  entries={detail?.timeline ?? []}
+                  loading={detailLoading}
+                />
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 italic">
+                Select a subscription from the sidebar to see its timeline.
+              </p>
+            )}
+          </Card>
+
+          {/* Webhooks card */}
+          <Card title="Webhook Events (live feed)">
+            <p className="text-xs text-gray-500 mb-3">
+              Method-level feed including unattributed events.
+              <span className="text-gray-400"> (polling every 5s)</span>
+            </p>
+            <WebhookList method="b_orders" />
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

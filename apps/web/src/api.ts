@@ -6,6 +6,7 @@ import type {
   CreatePlanRequest,
   SubscribeToPlanRequest,
   SubscriptionResponse,
+  SubscriptionDetailResponse,
   CreatePaymentProfileRequest,
   ChargeOrderRequest,
 } from "shared";
@@ -63,6 +64,10 @@ export function searchA1(id: string): Promise<unknown> {
   return get<unknown>(`/a1/${encodeURIComponent(id)}/mp`);
 }
 
+export function getA1Detail(id: string): Promise<SubscriptionDetailResponse> {
+  return get<SubscriptionDetailResponse>(`/a1/${encodeURIComponent(id)}`);
+}
+
 // ---------------------------------------------------------------------------
 // A.2 — Preapproval Authorized
 // ---------------------------------------------------------------------------
@@ -77,6 +82,10 @@ export function listA2(): Promise<SubscriptionResponse[]> {
 
 export function searchA2(id: string): Promise<unknown> {
   return get<unknown>(`/a2/${encodeURIComponent(id)}/mp`);
+}
+
+export function getA2Detail(id: string): Promise<SubscriptionDetailResponse> {
+  return get<SubscriptionDetailResponse>(`/a2/${encodeURIComponent(id)}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -129,6 +138,10 @@ export function listA3(): Promise<SubscriptionResponse[]> {
 
 export function searchA3(id: string): Promise<unknown> {
   return get<unknown>(`/a3/${encodeURIComponent(id)}/mp`);
+}
+
+export function getA3Detail(id: string): Promise<SubscriptionDetailResponse> {
+  return get<SubscriptionDetailResponse>(`/a3/${encodeURIComponent(id)}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +199,10 @@ export function listB(): Promise<BSubscriptionResponse[]> {
 
 export function listCharges(subscriptionId: string): Promise<OrderChargeResponse[]> {
   return get<OrderChargeResponse[]>(`/b/${encodeURIComponent(subscriptionId)}/charges`);
+}
+
+export function getBDetail(id: string): Promise<SubscriptionDetailResponse> {
+  return get<SubscriptionDetailResponse>(`/b/${encodeURIComponent(id)}`);
 }
 
 export { post, get };

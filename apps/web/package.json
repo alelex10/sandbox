@@ -5,11 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "start": "vite build && vite preview"
   },
   "dependencies": {
     "@mercadopago/sdk-js": "^0.0.3",
     "@mercadopago/sdk-react": "^1.0.7",
+    "@uiw/react-json-view": "2.0.0-alpha.43",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "shared": "workspace:*"

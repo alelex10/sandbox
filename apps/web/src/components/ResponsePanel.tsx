@@ -1,3 +1,5 @@
+import { JsonViewer } from "./JsonViewer.js";
+
 /**
  * Each entry is [displayLabel, ...candidateKeys].
  * The first candidate key that is non-null in the object wins.
@@ -53,13 +55,11 @@ export function ResponsePanel({ data }: ResponsePanelProps) {
         </div>
       )}
 
-      <div className="rounded border border-gray-200 bg-gray-900 p-3">
-        <h3 className="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">
+      <div className="rounded border border-gray-200 bg-gray-50 p-3">
+        <h3 className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
           Raw Response
         </h3>
-        <pre className="text-xs text-green-400 overflow-auto max-h-96 whitespace-pre-wrap break-all">
-          {JSON.stringify(data, null, 2)}
-        </pre>
+        <JsonViewer value={data} collapsed={1} />
       </div>
     </div>
   );

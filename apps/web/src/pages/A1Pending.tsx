@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { ResponsePanel } from "../components/ResponsePanel.js";
 import { WebhookList } from "../components/WebhookList.js";
-import { createA1, searchA1, listA1 } from "../api.js";
-import type { SubscriptionResponse } from "shared";
+import { TimelineView } from "../components/TimelineView.js";
+import { Card } from "../components/Card.js";
+import { createA1, searchA1, listA1, getA1Detail } from "../api.js";
+import type { SubscriptionResponse, SubscriptionDetailResponse } from "shared";
 
 interface FormState {
   reason: string;
@@ -18,7 +20,6 @@ interface FormState {
 function tomorrow(): string {
   const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const pad = (n: number) => String(n).padStart(2, "0");
-  // Build from LOCAL components so the input reflects the user's timezone
   return (
     d.getFullYear() +
     "-" +
@@ -29,6 +30,21 @@ function tomorrow(): string {
     pad(d.getHours()) +
     ":" +
     pad(d.getMinutes())
+  );
+}
+
+function StatusBadge({ status }: { status: string | null }) {
+  const s = status ?? "unknown";
+  const cls =
+    s === "authorized"
+      ? "bg-green-100 text-green-700"
+      : s === "pending"
+        ? "bg-yellow-100 text-yellow-700"
+        : s === "cancelled"
+          ? "bg-red-100 text-red-700"
+          : "bg-gray-100 text-gray-600";
+  return (
+    <span className={`text-xs rounded px-1.5 py-0.5 font-medium ${cls}`}>{s}</span>
   );
 }
 
@@ -47,16 +63,21 @@ export function A1Pending() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [createResult, setCreateResult] = useState<SubscriptionResponse | null>(null);
+  const [history, setHistory] = useState<SubscriptionResponse[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<SubscriptionDetailResponse | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [searchResult, setSearchResult] = useState<unknown>(null);
   const [searching, setSearching] = useState(false);
-  const [history, setHistory] = useState<SubscriptionResponse[]>([]);
+  const [searchMpId, setSearchMpId] = useState("");
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const fetchHistory = useCallback(async () => {
     try {
       const rows = await listA1();
       setHistory(rows);
     } catch {
-      // non-critical — ignore
+      // non-critical
     }
   }, []);
 
@@ -64,9 +85,29 @@ export function A1Pending() {
     void fetchHistory();
   }, [fetchHistory]);
 
-  function handleChange(
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
-  ) {
+  const fetchDetail = useCallback(async (id: string) => {
+    setDetailLoading(true);
+    try {
+      const d = await getA1Detail(id);
+      setDetail(d);
+    } catch {
+      // non-critical
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
+
+  function selectSubscription(id: string) {
+    if (selectedId === id) return;
+    setSelectedId(id);
+    setDetail(null);
+    setSearchResult(null);
+    setSearchMpId("");
+    setSearchError(null);
+    void fetchDetail(id);
+  }
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   }
 
@@ -88,13 +129,13 @@ export function A1Pending() {
             : undefined,
         },
       };
-      if (form.externalReference) {
-        payload.externalReference = form.externalReference;
-      }
+      if (form.externalReference) payload.externalReference = form.externalReference;
       const result = await createA1(payload);
       setCreateResult(result);
-      setSearchResult(null);
-      void fetchHistory();
+      await fetchHistory();
+      // Auto-select newly created subscription
+      setSelectedId(result.id);
+      void fetchDetail(result.id);
     } catch (err) {
       setError(err instanceof Error ? err : new Error("Request failed"));
     } finally {
@@ -103,274 +144,285 @@ export function A1Pending() {
   }
 
   async function handleSearch() {
-    if (!createResult?.id) return;
+    const targetId = searchMpId || selectedId;
+    if (!targetId) return;
     setSearching(true);
-    setError(null);
+    setSearchError(null);
     try {
-      const result = await searchA1(createResult.id);
+      const result = await searchA1(targetId);
       setSearchResult(result);
+      // Refresh timeline after search (creates a new snapshot)
+      if (selectedId) void fetchDetail(selectedId);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error("Search failed"));
+      setSearchError(err instanceof Error ? err.message : "Search failed");
     } finally {
       setSearching(false);
     }
   }
 
+  const selectedSub = history.find((s) => s.id === selectedId);
   const initPoint =
     createResult?.initPoint ??
     (createResult?.rawCreate != null &&
     typeof createResult.rawCreate === "object" &&
     "init_point" in (createResult.rawCreate as object)
-      ? ((createResult.rawCreate as Record<string, unknown>)
-          .init_point as string)
+      ? ((createResult.rawCreate as Record<string, unknown>).init_point as string)
       : null);
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
-      <h2 className="text-xl font-semibold text-gray-900 mb-1">
-        A.1 — Preapproval Pending
-      </h2>
-      <p className="text-sm text-gray-500 mb-6">
-        Creates a preapproval with <code className="text-xs bg-gray-100 px-1 rounded">status: pending</code>.
-        MP returns an <code className="text-xs bg-gray-100 px-1 rounded">init_point</code> the payer uses to authorize the subscription.
-      </p>
+    <div>
+      <div className="mb-4">
+        <h2 className="text-xl font-semibold text-gray-900 mb-1">A.1 — Preapproval Pending</h2>
+        <p className="text-sm text-gray-500">
+          Creates a preapproval with{" "}
+          <code className="text-xs bg-gray-100 px-1 rounded">status: pending</code>.
+          MP returns an <code className="text-xs bg-gray-100 px-1 rounded">init_point</code> the payer uses to authorize.
+        </p>
+      </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Reason */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Reason
-          </label>
-          <input
-            type="text"
-            name="reason"
-            value={form.reason}
-            onChange={handleChange}
-            required
-            placeholder="Monthly plan"
-            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-
-        {/* Payer email */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Payer email
-          </label>
-          <input
-            type="email"
-            name="payerEmail"
-            value={form.payerEmail}
-            onChange={handleChange}
-            required
-            placeholder="payer@example.com"
-            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-
-        {/* External reference (optional) */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            External reference{" "}
-            <span className="text-gray-400 font-normal">(optional — auto-generated if empty)</span>
-          </label>
-          <input
-            type="text"
-            name="externalReference"
-            value={form.externalReference}
-            onChange={handleChange}
-            placeholder="order-123"
-            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-
-        {/* Auto-recurring fields */}
-        <fieldset className="border border-gray-200 rounded p-4 space-y-4">
-          <legend className="text-sm font-medium text-gray-700 px-1">
-            Auto-recurring billing
-          </legend>
-
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Frequency
-              </label>
-              <input
-                type="number"
-                name="frequency"
-                value={form.frequency}
-                onChange={handleChange}
-                min="1"
-                required
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+      <div className="grid grid-cols-1 lg:grid-cols-[18rem_1fr] gap-6">
+        {/* ── Left sidebar ── */}
+        <aside className="space-y-2">
+          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900">Suscripciones</h3>
+              <span className="text-xs text-gray-400">{history.length}</span>
             </div>
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Frequency type
-              </label>
-              <select
-                name="frequencyType"
-                value={form.frequencyType}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            <ul className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+              {history.length === 0 && (
+                <li className="px-4 py-3 text-xs text-gray-400 italic">None yet.</li>
+              )}
+              {history.map((sub) => (
+                <li key={sub.id}>
+                  <button
+                    type="button"
+                    onClick={() => selectSubscription(sub.id)}
+                    className={[
+                      "w-full text-left px-4 py-3 text-xs hover:bg-gray-50 transition-colors",
+                      selectedId === sub.id ? "bg-blue-50 border-l-2 border-blue-500" : "",
+                    ].join(" ")}
+                  >
+                    <div className="font-mono text-gray-700 truncate">{sub.id.slice(0, 16)}…</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <StatusBadge status={sub.status} />
+                      <span className="text-gray-400">
+                        {new Date(sub.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </aside>
+
+        {/* ── Right main column ── */}
+        <div className="space-y-4 min-w-0">
+          {/* Create card */}
+          <Card title="Crear suscripción">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+                <input
+                  type="text"
+                  name="reason"
+                  value={form.reason}
+                  onChange={handleChange}
+                  required
+                  placeholder="Monthly plan"
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Payer email</label>
+                <input
+                  type="email"
+                  name="payerEmail"
+                  value={form.payerEmail}
+                  onChange={handleChange}
+                  required
+                  placeholder="payer@example.com"
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  External reference{" "}
+                  <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  name="externalReference"
+                  value={form.externalReference}
+                  onChange={handleChange}
+                  placeholder="order-123"
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <fieldset className="border border-gray-200 rounded p-4 space-y-4">
+                <legend className="text-sm font-medium text-gray-700 px-1">Auto-recurring billing</legend>
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Frequency</label>
+                    <input
+                      type="number"
+                      name="frequency"
+                      value={form.frequency}
+                      onChange={handleChange}
+                      min="1"
+                      required
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                    <select
+                      name="frequencyType"
+                      value={form.frequencyType}
+                      onChange={handleChange}
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="months">months</option>
+                      <option value="days">days</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                    <input
+                      type="number"
+                      name="amount"
+                      value={form.amount}
+                      onChange={handleChange}
+                      min="0.01"
+                      step="0.01"
+                      required
+                      placeholder="1000"
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="w-28">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
+                    <input
+                      type="text"
+                      name="currency"
+                      value={form.currency}
+                      onChange={handleChange}
+                      maxLength={3}
+                      minLength={3}
+                      pattern="[A-Za-z]{3}"
+                      required
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Start date <span className="text-gray-400 font-normal">(defaults to tomorrow)</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    name="startDate"
+                    value={form.startDate}
+                    onChange={handleChange}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </fieldset>
+              {error && (
+                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+                  {error.message}
+                </p>
+              )}
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                <option value="months">months</option>
-                <option value="days">days</option>
-              </select>
+                {submitting ? "Creating…" : "Create preapproval"}
+              </button>
+            </form>
+
+            {initPoint && (
+              <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded">
+                <p className="text-sm font-medium text-green-800 mb-1">Checkout ready</p>
+                <a
+                  href={initPoint}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-green-700 underline break-all hover:text-green-900"
+                >
+                  Open MP checkout (init_point)
+                </a>
+              </div>
+            )}
+
+            {createResult && <ResponsePanel data={createResult} />}
+          </Card>
+
+          {/* Search card */}
+          <Card title="Buscar por ID (GET subscription)">
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500">
+                Triggers <code className="bg-gray-100 px-1 rounded">GET /:id/mp</code> and appends a new snapshot to the timeline.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={searchMpId}
+                  onChange={(e) => setSearchMpId(e.target.value)}
+                  placeholder={selectedId ? `${selectedId.slice(0, 20)}… (selected)` : "Local subscription ID"}
+                  className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleSearch}
+                  disabled={searching || (!searchMpId && !selectedId)}
+                  className="bg-gray-700 text-white rounded px-4 py-2 text-sm font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                >
+                  {searching ? "Searching…" : "Search in MP"}
+                </button>
+              </div>
+              {searchError && (
+                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+                  {searchError}
+                </p>
+              )}
+              {searchResult !== null && <ResponsePanel data={searchResult} />}
             </div>
-          </div>
+          </Card>
 
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Amount
-              </label>
-              <input
-                type="number"
-                name="amount"
-                value={form.amount}
-                onChange={handleChange}
-                min="0.01"
-                step="0.01"
-                required
-                placeholder="1000"
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div className="w-28">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Currency
-              </label>
-              <input
-                type="text"
-                name="currency"
-                value={form.currency}
-                onChange={handleChange}
-                maxLength={3}
-                minLength={3}
-                pattern="[A-Za-z]{3}"
-                required
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
+          {/* Timeline card */}
+          <Card title="Timeline">
+            {selectedSub ? (
+              <div>
+                <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
+                  <span className="text-xs text-gray-500 font-mono">{selectedSub.id}</span>
+                  <StatusBadge status={selectedSub.status} />
+                </div>
+                <TimelineView
+                  entries={detail?.timeline ?? []}
+                  loading={detailLoading}
+                />
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 italic">
+                Select a subscription from the sidebar to see its timeline.
+              </p>
+            )}
+          </Card>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Start date{" "}
-              <span className="text-gray-400 font-normal">(defaults to tomorrow)</span>
-            </label>
-            <input
-              type="datetime-local"
-              name="startDate"
-              value={form.startDate}
-              onChange={handleChange}
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        </fieldset>
-
-        {error && (
-          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-            {error.message}
-          </p>
-        )}
-
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {submitting ? "Creating…" : "Create preapproval"}
-        </button>
-      </form>
-
-      {/* init_point link */}
-      {initPoint && (
-        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded">
-          <p className="text-sm font-medium text-green-800 mb-1">
-            Checkout ready
-          </p>
-          <a
-            href={initPoint}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-green-700 underline break-all hover:text-green-900"
-          >
-            Open MP checkout (init_point)
-          </a>
+          {/* Webhooks card */}
+          <Card title="Webhook Events (live feed)">
+            <p className="text-xs text-gray-500 mb-3">
+              Method-level feed including unattributed events. Per-subscription webhooks also appear in the Timeline above.
+              <span className="text-gray-400"> (polling every 5s)</span>
+            </p>
+            <WebhookList method="a1_pending" />
+          </Card>
         </div>
-      )}
-
-      {/* Search in MP */}
-      {createResult?.id && (
-        <div className="mt-4">
-          <button
-            onClick={handleSearch}
-            disabled={searching}
-            className="bg-gray-700 text-white rounded px-4 py-2 text-sm font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {searching ? "Searching…" : "Search in MP"}
-          </button>
-        </div>
-      )}
-
-      {/* Response panels */}
-      {(createResult !== null || searchResult !== null) && (
-        <div className="mt-4 space-y-4">
-          {createResult !== null && (
-            <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                Create result
-              </h3>
-              <ResponsePanel data={createResult} />
-            </div>
-          )}
-          {searchResult !== null && (
-            <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                MP live state
-              </h3>
-              <ResponsePanel data={searchResult} />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Subscriptions history */}
-      {history.length > 0 && (
-        <div className="mt-8">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">
-            Suscripciones creadas
-          </h3>
-          <div className="overflow-x-auto rounded border border-gray-200">
-            <table className="min-w-full text-xs text-gray-700">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">ID</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">Status</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">MP ID</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">Created at</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {history.map((sub) => (
-                  <tr key={sub.id} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 font-mono break-all">{sub.id}</td>
-                    <td className="px-3 py-2">{sub.status ?? "—"}</td>
-                    <td className="px-3 py-2 font-mono text-xs break-all">{sub.mpId ?? "—"}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">{sub.createdAt}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Webhook events for a1_pending */}
-      <WebhookList method="a1_pending" />
+      </div>
     </div>
   );
 }

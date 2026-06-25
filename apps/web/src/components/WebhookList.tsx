@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import type { SubscriptionMethod, WebhookEventResponse } from "shared";
 import { listWebhooks } from "../api.js";
+import { JsonViewer } from "./JsonViewer.js";
 
 interface WebhookListProps {
   method: SubscriptionMethod;
@@ -33,16 +34,10 @@ export function WebhookList({ method, pollIntervalMs = 5000 }: WebhookListProps)
   }, [fetchEvents, pollIntervalMs]);
 
   const attributed = events.filter((e) => e.method !== null);
-  // Merge unattributed bucket (method=null/unknown) from dedicated API call
   const unclassified = unattributed;
 
   return (
-    <div className="mt-6">
-      <h3 className="text-sm font-semibold text-gray-700 mb-3">
-        Webhook Events{" "}
-        <span className="text-gray-400 font-normal">(polling every {pollIntervalMs / 1000}s)</span>
-      </h3>
-
+    <div className="mt-2">
       {error && (
         <p className="text-sm text-red-600 mb-2">{error}</p>
       )}
@@ -82,39 +77,73 @@ function EventList({
   return (
     <ul className="space-y-2">
       {events.map((ev) => (
-        <li
-          key={ev.id}
-          className={[
-            "rounded border p-3 text-xs font-mono",
-            muted
-              ? "border-gray-200 bg-gray-50 text-gray-500"
-              : "border-gray-200 bg-white text-gray-800",
-          ].join(" ")}
-        >
-          <div className="flex gap-2 flex-wrap">
-            <span className="rounded bg-gray-100 px-1.5 py-0.5">{ev.topic}</span>
-            <span className="rounded bg-blue-100 text-blue-700 px-1.5 py-0.5">
-              {ev.category}
-            </span>
-            {ev.method && (
-              <span className="rounded bg-green-100 text-green-700 px-1.5 py-0.5">
-                {ev.method}
-              </span>
-            )}
-            {ev.action && (
-              <span className="rounded bg-yellow-100 text-yellow-700 px-1.5 py-0.5">
-                {ev.action}
-              </span>
-            )}
-            <span className="ml-auto text-gray-400">
-              {new Date(ev.receivedAt).toLocaleTimeString()}
-            </span>
-          </div>
-          {ev.mpResourceId && (
-            <div className="mt-1 text-gray-500">resource: {ev.mpResourceId}</div>
-          )}
-        </li>
+        <EventItem key={ev.id} ev={ev} muted={muted} />
       ))}
     </ul>
+  );
+}
+
+function EventItem({ ev, muted }: { ev: WebhookEventResponse; muted: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasPayload = ev.rawBody !== null && ev.rawBody !== undefined;
+  const hasFetched = ev.rawFetched !== null && ev.rawFetched !== undefined;
+
+  return (
+    <li
+      className={[
+        "rounded border p-3 text-xs font-mono",
+        muted
+          ? "border-gray-200 bg-gray-50 text-gray-500"
+          : "border-gray-200 bg-white text-gray-800",
+      ].join(" ")}
+    >
+      <div className="flex gap-2 flex-wrap">
+        <span className="rounded bg-gray-100 px-1.5 py-0.5">{ev.topic}</span>
+        <span className="rounded bg-blue-100 text-blue-700 px-1.5 py-0.5">
+          {ev.category}
+        </span>
+        {ev.method && (
+          <span className="rounded bg-green-100 text-green-700 px-1.5 py-0.5">
+            {ev.method}
+          </span>
+        )}
+        {ev.action && (
+          <span className="rounded bg-yellow-100 text-yellow-700 px-1.5 py-0.5">
+            {ev.action}
+          </span>
+        )}
+        <span className="ml-auto text-gray-400">
+          {new Date(ev.receivedAt).toLocaleTimeString()}
+        </span>
+      </div>
+      {ev.mpResourceId && (
+        <div className="mt-1 text-gray-500">resource: {ev.mpResourceId}</div>
+      )}
+      {(hasPayload || hasFetched) && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 text-blue-500 hover:underline text-xs font-sans"
+        >
+          {expanded ? "Hide payload" : "Show payload"}
+        </button>
+      )}
+      {expanded && (
+        <div className="mt-2 space-y-2 font-sans">
+          {hasPayload && (
+            <div>
+              <p className="text-xs text-gray-500 mb-1 font-medium">Body</p>
+              <JsonViewer value={ev.rawBody} collapsed={1} />
+            </div>
+          )}
+          {hasFetched && (
+            <div>
+              <p className="text-xs text-gray-500 mb-1 font-medium">Fetched</p>
+              <JsonViewer value={ev.rawFetched} collapsed={1} />
+            </div>
+          )}
+        </div>
+      )}
+    </li>
   );
 }
