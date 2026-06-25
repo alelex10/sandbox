@@ -7,6 +7,7 @@ import type {
   SubscribeToPlanRequest,
   SubscriptionResponse,
   SubscriptionDetailResponse,
+  PlanDetailResponse,
   CreatePaymentProfileRequest,
   ChargeOrderRequest,
 } from "shared";
@@ -102,6 +103,7 @@ export interface PlanResponse {
   frequencyType: string;
   initPoint: string | null;
   rawCreate: unknown;
+  rawLastSearch: unknown;
   createdAt: string;
 }
 
@@ -126,6 +128,14 @@ export function createPlan(body: CreatePlanRequest): Promise<PlanResponse> {
 
 export function listA3Plans(): Promise<PlanResponse[]> {
   return get<PlanResponse[]>("/a3/plans");
+}
+
+export function getPlanDetail(id: string): Promise<PlanDetailResponse> {
+  return get<PlanDetailResponse>(`/a3/plans/${encodeURIComponent(id)}`);
+}
+
+export function searchPlan(id: string): Promise<unknown> {
+  return get<unknown>(`/a3/plans/${encodeURIComponent(id)}/mp`);
 }
 
 export function subscribeToPlan(body: SubscribeToPlanRequest): Promise<SubscribeResult> {
