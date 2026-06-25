@@ -1,49 +1,58 @@
-import { useEffect, useState } from "react";
-import { createItem, listItems } from "./api.js";
-import type { ItemResponse } from "shared";
+import { useState } from "react";
+import type { SubscriptionMethod } from "shared";
+
+const TABS: { label: string; value: SubscriptionMethod }[] = [
+  { label: "A.1 Preapproval Pending", value: "a1_pending" },
+  { label: "A.2 Preapproval Authorized", value: "a2_authorized" },
+  { label: "A.3 Preapproval Plan", value: "a3_plan" },
+  { label: "B Orders", value: "b_orders" },
+];
+
+function PlaceholderPage({ method }: { method: SubscriptionMethod }) {
+  return (
+    <div className="p-8">
+      <h2 className="text-xl font-semibold mb-2">{method}</h2>
+      <p className="text-gray-500">Implementation coming in the next PR slice.</p>
+    </div>
+  );
+}
 
 export function App() {
-  const [items, setItems] = useState<ItemResponse[]>([]);
-  const [name, setName] = useState("");
-  const [amount, setAmount] = useState(0);
-
-  const refresh = () => listItems().then(setItems);
-  useEffect(() => {
-    refresh();
-  }, []);
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await createItem({ name, amount });
-    setName("");
-    setAmount(0);
-    refresh();
-  };
+  const [activeMethod, setActiveMethod] = useState<SubscriptionMethod>("a1_pending");
 
   return (
-    <main>
-      <h1>Sandbox</h1>
-      <form onSubmit={onSubmit}>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="name"
-        />
-        <input
-          type="number"
-          value={amount}
-          onChange={(e) => setAmount(Number(e.target.value))}
-          placeholder="amount"
-        />
-        <button type="submit">Create</button>
-      </form>
-      <ul>
-        {items.map((it) => (
-          <li key={it.id}>
-            {it.name} — {it.amount}
-          </li>
-        ))}
-      </ul>
-    </main>
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white border-b border-gray-200 px-6 py-4">
+        <h1 className="text-2xl font-bold text-gray-900">MercadoPago Subscriptions Sandbox</h1>
+      </header>
+
+      {/* Tab bar */}
+      <nav className="bg-white border-b border-gray-200 px-6">
+        <ul className="flex gap-1" role="tablist">
+          {TABS.map((tab) => (
+            <li key={tab.value} role="presentation">
+              <button
+                role="tab"
+                aria-selected={activeMethod === tab.value}
+                onClick={() => setActiveMethod(tab.value)}
+                className={[
+                  "px-4 py-3 text-sm font-medium border-b-2 transition-colors",
+                  activeMethod === tab.value
+                    ? "border-blue-600 text-blue-600"
+                    : "border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300",
+                ].join(" ")}
+              >
+                {tab.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      {/* Page panel */}
+      <main>
+        <PlaceholderPage method={activeMethod} />
+      </main>
+    </div>
   );
 }
