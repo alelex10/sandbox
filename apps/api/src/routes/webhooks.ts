@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { db } from "../db.js";
 import { mpFetch } from "../mp.js";
 import { classifyWebhook } from "payments";
+import { tryJsonParse } from "../util.js";
 
 export const webhooksRouter = Router();
 
@@ -122,17 +123,6 @@ webhooksRouter.get("/", async (req: Request, res: Response, next: NextFunction) 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Null-safe JSON.parse. Returns the parsed value, or the raw string if parse
- * fails, or null if the input is null/undefined. */
-function tryJsonParse(value: string | null | undefined): unknown {
-  if (value == null) return null;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}
 
 function topicToResourcePath(
   topic: string,

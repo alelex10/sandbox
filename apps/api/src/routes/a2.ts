@@ -3,6 +3,7 @@ import { CreateA2Request } from "shared";
 import { createA2, getA2 } from "payments";
 import { db } from "../db.js";
 import { mpClient, getMpBackUrl } from "../mp.js";
+import { tryJsonParse } from "../util.js";
 
 export const a2Router = Router();
 
@@ -56,6 +57,7 @@ a2Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
       mpId: subscription.mpId,
       status: subscription.status,
       initPoint: subscription.initPoint,
+      tokenization: subscription.tokenization,
       rawCreate: result,
       rawLastSearch: null,
       createdAt: subscription.createdAt.toISOString(),
@@ -145,15 +147,3 @@ a2Router.get(
   },
 );
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function tryJsonParse(value: string | null | undefined): unknown {
-  if (value == null) return null;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}

@@ -45,10 +45,10 @@ export async function mpFetch(
   return res.json() as Promise<unknown>;
 }
 
-export function getMpNotificationUrl(): string {
-  return process.env.MP_NOTIFICATION_URL ?? "";
+export function getMpNotificationUrl(): string | undefined {
+  return process.env.MP_NOTIFICATION_URL || undefined;
 }
 
-export function getMpBackUrl(): string {
-  return process.env.MP_BACK_URL ?? "";
+export function getMpBackUrl(): string | undefined {
+  return process.env.MP_BACK_URL || undefined;
 }

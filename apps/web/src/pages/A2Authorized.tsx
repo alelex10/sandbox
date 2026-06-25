@@ -204,7 +204,7 @@ export function A2Authorized() {
           {tokenizationMode === "mercadopagojs" ? (
             <CardFormMpJs publicKey={PUBLIC_KEY} onToken={handleToken} />
           ) : (
-            <CardBrick publicKey={PUBLIC_KEY} onToken={handleToken} />
+            <CardBrick key={`brick-${tokenizationMode}`} publicKey={PUBLIC_KEY} onToken={handleToken} />
           )}
         </div>
 
@@ -448,8 +448,7 @@ export function A2Authorized() {
                       {sub.mpId ?? "—"}
                     </td>
                     <td className="px-3 py-2">
-                      {(sub as unknown as { tokenization?: string })
-                        .tokenization ?? "—"}
+                      {sub.tokenization ?? "—"}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
                       {sub.createdAt}

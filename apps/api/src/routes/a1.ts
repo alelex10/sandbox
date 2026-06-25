@@ -3,6 +3,7 @@ import { CreateA1Request } from "shared";
 import { createA1, getA1 } from "payments";
 import { db } from "../db.js";
 import { mpClient, getMpBackUrl } from "../mp.js";
+import { tryJsonParse } from "../util.js";
 
 export const a1Router = Router();
 
@@ -143,15 +144,3 @@ a1Router.get(
   },
 );
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function tryJsonParse(value: string | null | undefined): unknown {
-  if (value == null) return null;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-}

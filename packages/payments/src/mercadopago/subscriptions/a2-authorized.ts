@@ -8,11 +8,11 @@ export interface CreateA2Input {
   reason: string;
   payerEmail: string;
   externalReference: string;
-  backUrl: string;
+  backUrl?: string;
   cardTokenId: string;
   autoRecurring: {
     frequency: number;
-    frequencyType: string;
+    frequencyType: "months" | "days";
     amount: number;
     currency: string;
     startDate?: string;
@@ -35,7 +35,7 @@ export async function createA2(
       reason: input.reason,
       payer_email: input.payerEmail,
       external_reference: input.externalReference,
-      back_url: input.backUrl,
+      ...(input.backUrl ? { back_url: input.backUrl } : {}),
       card_token_id: input.cardTokenId,
       status: "authorized",
       auto_recurring: {

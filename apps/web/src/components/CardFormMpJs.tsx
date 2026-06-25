@@ -16,12 +16,11 @@ declare global {
   }
 }
 
-let sdkLoaded = false;
+let loadPromise: Promise<unknown> | null = null;
 
-async function ensureSdkLoaded(): Promise<void> {
-  if (sdkLoaded) return;
-  await loadMercadoPago();
-  sdkLoaded = true;
+function ensureSdkLoaded(): Promise<unknown> {
+  if (!loadPromise) loadPromise = loadMercadoPago();
+  return loadPromise;
 }
 
 interface FormState {
