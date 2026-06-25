@@ -7,9 +7,67 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Item {
-  id        String   @id @default(uuid())
-  name      String
-  amount    Float
-  createdAt DateTime @default(now())
+model Subscription {
+  id                String         @id @default(uuid())
+  method            String
+  mpId              String?
+  status            String?
+  externalReference String?
+  payerEmail        String?
+  reason            String?
+  amount            Float          @default(0)
+  currency          String         @default("ARS")
+  startDate         String?
+  initPoint         String?
+  preapprovalPlanId String?
+  paymentProfileId  String?
+  customerId        String?
+  tokenization      String?
+  rawCreate         String?
+  rawLastSearch     String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  events            WebhookEvent[]
+  charges           OrderCharge[]
+
+  @@index([externalReference])
+}
+
+model Plan {
+  id          String   @id @default(uuid())
+  mpPlanId    String?
+  reason      String?
+  amount      Float    @default(0)
+  currency    String   @default("ARS")
+  frequency   Int      @default(1)
+  frequencyType String  @default("months")
+  initPoint   String?
+  rawCreate   String?
+  createdAt   DateTime @default(now())
+}
+
+model OrderCharge {
+  id             String       @id @default(uuid())
+  subscriptionId String
+  mpOrderId      String?
+  amount         Float
+  status         String?
+  sequenceNumber Int?
+  rawResponse    String?
+  createdAt      DateTime     @default(now())
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id])
+}
+
+model WebhookEvent {
+  id             String        @id @default(uuid())
+  method         String?
+  topic          String
+  category       String
+  action         String?
+  mpResourceId   String?
+  rawBody        String
+  rawFetched     String?
+  receivedAt     DateTime      @default(now())
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
 }
