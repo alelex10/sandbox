@@ -1,11 +1,16 @@
-const KEY_FIELDS = [
-  "id",
-  "status",
-  "init_point",
-  "payment_method_id",
-  "card_id",
-  "next_payment_date",
-] as const;
+/**
+ * Each entry is [displayLabel, ...candidateKeys].
+ * The first candidate key that is non-null in the object wins.
+ * This handles both snake_case (MP search result) and camelCase (SubscriptionResponse).
+ */
+const KEY_FIELD_CANDIDATES: [string, ...string[]][] = [
+  ["id", "id"],
+  ["status", "status"],
+  ["init_point", "init_point", "initPoint"],
+  ["payment_method_id", "payment_method_id", "paymentMethodId"],
+  ["card_id", "card_id", "cardId"],
+  ["next_payment_date", "next_payment_date", "nextPaymentDate"],
+];
 
 interface ResponsePanelProps {
   data: unknown;
@@ -15,9 +20,12 @@ function extractKeyFields(data: unknown): Record<string, unknown> {
   if (data === null || typeof data !== "object") return {};
   const obj = data as Record<string, unknown>;
   const result: Record<string, unknown> = {};
-  for (const key of KEY_FIELDS) {
-    if (obj[key] != null) {
-      result[key] = obj[key];
+  for (const [label, ...candidates] of KEY_FIELD_CANDIDATES) {
+    for (const key of candidates) {
+      if (obj[key] != null) {
+        result[label] = obj[key];
+        break;
+      }
     }
   }
   return result;

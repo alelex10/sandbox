@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ResponsePanel } from "../components/ResponsePanel.js";
 import { WebhookList } from "../components/WebhookList.js";
-import { createA1, searchA1 } from "../api.js";
+import { createA1, searchA1, listA1 } from "../api.js";
 import type { SubscriptionResponse } from "shared";
 
 interface FormState {
@@ -17,7 +17,19 @@ interface FormState {
 
 function tomorrow(): string {
   const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  return d.toISOString().slice(0, 16); // "YYYY-MM-DDTHH:mm" for datetime-local input
+  const pad = (n: number) => String(n).padStart(2, "0");
+  // Build from LOCAL components so the input reflects the user's timezone
+  return (
+    d.getFullYear() +
+    "-" +
+    pad(d.getMonth() + 1) +
+    "-" +
+    pad(d.getDate()) +
+    "T" +
+    pad(d.getHours()) +
+    ":" +
+    pad(d.getMinutes())
+  );
 }
 
 export function A1Pending() {
@@ -37,6 +49,20 @@ export function A1Pending() {
   const [createResult, setCreateResult] = useState<SubscriptionResponse | null>(null);
   const [searchResult, setSearchResult] = useState<unknown>(null);
   const [searching, setSearching] = useState(false);
+  const [history, setHistory] = useState<SubscriptionResponse[]>([]);
+
+  const fetchHistory = useCallback(async () => {
+    try {
+      const rows = await listA1();
+      setHistory(rows);
+    } catch {
+      // non-critical — ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchHistory();
+  }, [fetchHistory]);
 
   function handleChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
@@ -49,10 +75,9 @@ export function A1Pending() {
     setError(null);
     setSubmitting(true);
     try {
-      const result = await createA1({
+      const payload: Parameters<typeof createA1>[0] = {
         reason: form.reason,
         payerEmail: form.payerEmail,
-        externalReference: form.externalReference || crypto.randomUUID(),
         autoRecurring: {
           frequency: Number(form.frequency),
           frequencyType: form.frequencyType,
@@ -62,9 +87,14 @@ export function A1Pending() {
             ? new Date(form.startDate).toISOString()
             : undefined,
         },
-      });
+      };
+      if (form.externalReference) {
+        payload.externalReference = form.externalReference;
+      }
+      const result = await createA1(payload);
       setCreateResult(result);
       setSearchResult(null);
+      void fetchHistory();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
     } finally {
@@ -218,6 +248,8 @@ export function A1Pending() {
                 value={form.currency}
                 onChange={handleChange}
                 maxLength={3}
+                minLength={3}
+                pattern="[A-Za-z]{3}"
                 required
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -303,6 +335,37 @@ export function A1Pending() {
               <ResponsePanel data={searchResult} />
             </div>
           )}
+        </div>
+      )}
+
+      {/* Subscriptions history */}
+      {history.length > 0 && (
+        <div className="mt-8">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">
+            Suscripciones creadas
+          </h3>
+          <div className="overflow-x-auto rounded border border-gray-200">
+            <table className="min-w-full text-xs text-gray-700">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium text-gray-500">ID</th>
+                  <th className="px-3 py-2 text-left font-medium text-gray-500">Status</th>
+                  <th className="px-3 py-2 text-left font-medium text-gray-500">MP ID</th>
+                  <th className="px-3 py-2 text-left font-medium text-gray-500">Created at</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {history.map((sub) => (
+                  <tr key={sub.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 font-mono break-all">{sub.id}</td>
+                    <td className="px-3 py-2">{sub.status ?? "—"}</td>
+                    <td className="px-3 py-2 font-mono text-xs break-all">{sub.mpId ?? "—"}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{sub.createdAt}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

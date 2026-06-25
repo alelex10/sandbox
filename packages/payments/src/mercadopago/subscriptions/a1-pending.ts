@@ -1,6 +1,8 @@
 import { PreApproval } from "mercadopago";
 import type { MercadoPagoConfig } from "mercadopago";
-import type { PreApprovalResponse } from "mercadopago/dist/clients/preApproval/commonTypes";
+
+/** Return type derived from the public SDK — avoids importing internal dist paths. */
+type PreApprovalResult = Awaited<ReturnType<InstanceType<typeof PreApproval>["create"]>>;
 
 export interface CreateA1Input {
   reason: string;
@@ -24,7 +26,7 @@ export interface CreateA1Input {
 export async function createA1(
   client: MercadoPagoConfig,
   input: CreateA1Input,
-): Promise<PreApprovalResponse> {
+): Promise<PreApprovalResult> {
   const preApproval = new PreApproval(client);
 
   return preApproval.create({
@@ -54,7 +56,7 @@ export async function createA1(
 export async function getA1(
   client: MercadoPagoConfig,
   mpId: string,
-): Promise<PreApprovalResponse> {
+): Promise<PreApprovalResult> {
   const preApproval = new PreApproval(client);
   return preApproval.get({ id: mpId });
 }

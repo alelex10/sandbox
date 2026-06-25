@@ -11,7 +11,7 @@ a1Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = CreateA1Request.parse(req.body);
 
-    // Generate externalReference if not provided
+    // externalReference is optional — generate a UUID when omitted
     const externalReference = body.externalReference ?? crypto.randomUUID();
 
     // Default start_date to tomorrow if not provided (prevents immediate debt)
@@ -121,7 +121,15 @@ a1Router.get(
         return;
       }
 
-      const mpResult = await getA1(mpClient(), subscription.mpId);
+      let mpResult: unknown;
+      try {
+        mpResult = await getA1(mpClient(), subscription.mpId);
+      } catch (mpErr) {
+        const detail =
+          mpErr instanceof Error ? mpErr.message : "Unknown MP error";
+        res.status(502).json({ error: "MercadoPago fetch failed", detail });
+        return;
+      }
 
       await db.subscription.update({
         where: { id: subscription.id },

@@ -35,7 +35,7 @@ export type AutoRecurring = z.infer<typeof AutoRecurring>;
 export const CreateA1Request = z.object({
   reason: z.string().min(1),
   payerEmail: z.string().email(),
-  externalReference: z.string().min(1),
+  externalReference: z.string().min(1).optional(),
   autoRecurring: AutoRecurring,
 });
 export type CreateA1Request = z.infer<typeof CreateA1Request>;
