@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { SubscriptionMethod } from "shared";
+import { A1Pending } from "./pages/A1Pending.js";
 
 const TABS: { label: string; value: SubscriptionMethod }[] = [
   { label: "A.1 Preapproval Pending", value: "a1_pending" },
@@ -51,7 +52,11 @@ export function App() {
 
       {/* Page panel */}
       <main>
-        <PlaceholderPage method={activeMethod} />
+        {activeMethod === "a1_pending" ? (
+          <A1Pending />
+        ) : (
+          <PlaceholderPage method={activeMethod} />
+        )}
       </main>
     </div>
   );

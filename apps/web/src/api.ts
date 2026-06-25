@@ -1,6 +1,8 @@
 import type {
   SubscriptionMethod,
   WebhookEventResponse,
+  CreateA1Request,
+  SubscriptionResponse,
 } from "shared";
 
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
@@ -39,7 +41,19 @@ export function listWebhooks(
 }
 
 // ---------------------------------------------------------------------------
-// A.1 — Preapproval Pending (stubs — implemented in Group 2)
+// A.1 — Preapproval Pending
 // ---------------------------------------------------------------------------
+
+export function createA1(body: CreateA1Request): Promise<SubscriptionResponse> {
+  return post<SubscriptionResponse>("/a1", body);
+}
+
+export function listA1(): Promise<SubscriptionResponse[]> {
+  return get<SubscriptionResponse[]>("/a1");
+}
+
+export function searchA1(id: string): Promise<unknown> {
+  return get<unknown>(`/a1/${encodeURIComponent(id)}/mp`);
+}
 
 export { post, get };
