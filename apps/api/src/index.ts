@@ -1,12 +1,13 @@
+import 'dotenv/config';
 import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
 import { ZodError } from "zod";
-import { itemsRouter } from "./routes/items.js";
+import { webhooksRouter } from "./routes/webhooks.js";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use("/items", itemsRouter);
+app.use("/webhooks", webhooksRouter);
 
 // Global error handler — must have 4 params so Express recognises it as error middleware
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction): void => {
