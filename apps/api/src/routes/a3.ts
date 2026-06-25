@@ -26,14 +26,47 @@ a3Router.post("/plans", async (req: Request, res: Response, next: NextFunction) 
       },
     });
 
+    // Fix #1: guard against missing mpPlanId — do not persist a null plan id
+    const mpPlanId = (result as { id?: string }).id ?? null;
+    if (!mpPlanId) {
+      const safeDetail =
+        typeof result === "object" && result !== null
+          ? JSON.stringify(result).slice(0, 400)
+          : String(result);
+      res.status(502).json({
+        error: "MercadoPago plan creation returned no id",
+        detail: safeDetail,
+      });
+      return;
+    }
+
+    // Fix #4: prefer billing fields from MP auto_recurring; fall back to request body
+    const mpAutoRecurring = (result as { auto_recurring?: Record<string, unknown> }).auto_recurring;
+    const amount =
+      typeof mpAutoRecurring?.transaction_amount === "number"
+        ? mpAutoRecurring.transaction_amount
+        : body.autoRecurring.amount;
+    const currency =
+      typeof mpAutoRecurring?.currency_id === "string"
+        ? mpAutoRecurring.currency_id
+        : body.autoRecurring.currency;
+    const frequency =
+      typeof mpAutoRecurring?.frequency === "number"
+        ? mpAutoRecurring.frequency
+        : body.autoRecurring.frequency;
+    const frequencyType =
+      typeof mpAutoRecurring?.frequency_type === "string"
+        ? mpAutoRecurring.frequency_type
+        : body.autoRecurring.frequencyType;
+
     const plan = await db.plan.create({
       data: {
-        mpPlanId: (result as { id?: string }).id ?? null,
+        mpPlanId,
         reason: body.reason,
-        amount: body.autoRecurring.amount,
-        currency: body.autoRecurring.currency,
-        frequency: body.autoRecurring.frequency,
-        frequencyType: body.autoRecurring.frequencyType,
+        amount,
+        currency,
+        frequency,
+        frequencyType,
         initPoint: (result as { init_point?: string }).init_point ?? null,
         rawCreate: JSON.stringify(result),
       },
@@ -137,7 +170,16 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
         orderBy: { createdAt: "desc" },
       });
 
-      const initPoint = plan?.initPoint ?? null;
+      // Fix #3: guard — do not persist Subscription when plan is missing or has no initPoint
+      if (!plan || !plan.initPoint) {
+        res.status(404).json({
+          error: "Plan not found for redirect",
+          detail: `No plan with mpPlanId "${body.preapprovalPlanId}" found, or plan has no initPoint.`,
+        });
+        return;
+      }
+
+      const initPoint = plan.initPoint;
 
       // Persist a Subscription record to track this redirect-based subscription attempt
       const subscription = await db.subscription.create({
@@ -155,7 +197,8 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
         },
       });
 
-      res.status(200).json({
+      // Fix #7: 201 for redirect-path creation (consistent with API path)
+      res.status(201).json({
         path: "redirect",
         id: subscription.id,
         method: subscription.method,
@@ -167,9 +210,7 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
         rawCreate: null,
         rawLastSearch: null,
         createdAt: subscription.createdAt.toISOString(),
-        message: initPoint
-          ? "Redirect the payer to initPoint to complete subscription."
-          : "Plan not found in local DB — provide the init_point manually.",
+        message: "Redirect the payer to initPoint to complete subscription.",
       });
     }
   } catch (err) {

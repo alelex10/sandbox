@@ -262,6 +262,9 @@ function PlanPicker({
   selectedId: string;
   onSelect: (id: string) => void;
 }) {
+  // Fix #2: only plans with a real mpPlanId are selectable
+  const selectablePlans = plans.filter((p) => p.mpPlanId);
+
   if (plans.length === 0) {
     return (
       <p className="text-sm text-gray-500 italic">
@@ -281,11 +284,18 @@ function PlanPicker({
         className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
       >
         <option value="">— choose a plan —</option>
-        {plans.map((p) => (
-          <option key={p.id} value={p.mpPlanId ?? p.id}>
+        {selectablePlans.map((p) => (
+          // Fix #2: value is always mpPlanId — never falls back to local id
+          <option key={p.id} value={p.mpPlanId!}>
             {p.reason ?? "Unnamed plan"} — {p.amount} {p.currency} /{" "}
             {p.frequency} {p.frequencyType}{" "}
-            {p.mpPlanId ? `(${p.mpPlanId})` : "(no mpPlanId)"}
+            ({p.mpPlanId})
+          </option>
+        ))}
+        {plans.filter((p) => !p.mpPlanId).map((p) => (
+          // Plans without mpPlanId are rendered disabled and non-selectable
+          <option key={p.id} value="" disabled>
+            {p.reason ?? "Unnamed plan"} (no mpPlanId — not selectable)
           </option>
         ))}
       </select>
@@ -317,10 +327,8 @@ function SubscribeSection({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SubscribeResult | null>(null);
 
-  // Resolve selected plan object for its initPoint
-  const selectedPlan = plans.find(
-    (p) => (p.mpPlanId ?? p.id) === selectedPlanMpId,
-  );
+  // Fix #2: look up selected plan by mpPlanId only — never by local id
+  const selectedPlan = plans.find((p) => p.mpPlanId === selectedPlanMpId);
 
   function handleToken(tokenId: string) {
     setCardTokenId(tokenId);
@@ -589,6 +597,8 @@ export function A3Plan() {
   const [searching, setSearching] = useState(false);
   const [searchTargetId, setSearchTargetId] = useState("");
   const [searchError, setSearchError] = useState<string | null>(null);
+  // Fix #5: distinguish info-level search feedback from errors
+  const [searchIsInfo, setSearchIsInfo] = useState(false);
 
   const fetchPlans = useCallback(async () => {
     try {
@@ -619,12 +629,27 @@ export function A3Plan() {
 
   async function handleSearch() {
     if (!searchTargetId) return;
-    setSearching(true);
     setSearchError(null);
+    setSearchIsInfo(false);
+    setSearchResult(null);
+
+    // Fix #5: if the selected subscription is pending_redirect, don't call MP — show info instead
+    const targetSub = subscriptions.find((s) => s.id === searchTargetId);
+    if (targetSub?.status === "pending_redirect") {
+      setSearchIsInfo(true);
+      setSearchError(
+        "Esta suscripción está esperando que el pagador complete el checkout. No hay registro en MP todavía." +
+          (targetSub.initPoint ? ` Init point: ${targetSub.initPoint}` : ""),
+      );
+      return;
+    }
+
+    setSearching(true);
     try {
       const result = await searchA3(searchTargetId);
       setSearchResult(result);
     } catch (err) {
+      setSearchIsInfo(false);
       setSearchError(err instanceof Error ? err.message : "Search failed");
     } finally {
       setSearching(false);
@@ -680,7 +705,15 @@ export function A3Plan() {
           </button>
         </div>
         {searchError && (
-          <p className="mt-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+          <p
+            className={[
+              "mt-2 text-sm rounded px-3 py-2 border",
+              // Fix #5: info styling for pending_redirect, error styling otherwise
+              searchIsInfo
+                ? "text-blue-700 bg-blue-50 border-blue-200"
+                : "text-red-600 bg-red-50 border-red-200",
+            ].join(" ")}
+          >
             {searchError}
           </p>
         )}
@@ -722,7 +755,28 @@ export function A3Plan() {
                 {subscriptions.map((sub) => (
                   <tr key={sub.id} className="hover:bg-gray-50">
                     <td className="px-3 py-2 font-mono break-all">{sub.id}</td>
-                    <td className="px-3 py-2">{sub.status ?? "—"}</td>
+                    <td className="px-3 py-2">
+                      {sub.status ?? "—"}
+                      {/* Fix #5: informational note for pending_redirect rows */}
+                      {sub.status === "pending_redirect" && (
+                        <span className="block text-xs text-blue-600 mt-0.5">
+                          Esperando que el pagador complete el checkout
+                          {sub.initPoint && (
+                            <>
+                              {" — "}
+                              <a
+                                href={sub.initPoint}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline hover:text-blue-800"
+                              >
+                                Abrir link
+                              </a>
+                            </>
+                          )}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 font-mono text-xs break-all">
                       {sub.mpId ?? "—"}
                     </td>

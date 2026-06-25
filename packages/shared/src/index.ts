@@ -87,6 +87,7 @@ export const SubscriptionResponse = z.object({
   status: z.string().nullable(),
   initPoint: z.string().nullable(),
   tokenization: Tokenization.nullable().optional(),
+  preapprovalPlanId: z.string().nullable().optional(),
   rawCreate: z.unknown().nullable(),
   rawLastSearch: z.unknown().nullable(),
   createdAt: z.string(),
