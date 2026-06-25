@@ -34,6 +34,7 @@ function RegisterProfileSection({
   const [cardTokenId, setCardTokenId] = useState<string | null>(null);
   const [tokenSource, setTokenSource] = useState<Tokenization | null>(null);
   const [paymentMethodId, setPaymentMethodId] = useState("visa");
+  const [cardType, setCardType] = useState<"credit_card" | "debit_card">("credit_card");
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +61,7 @@ function RegisterProfileSection({
         cardTokenId,
         tokenization: tokenSource,
         paymentMethodId,
+        cardType,
       });
       setResult(created);
       // Token is single-use — clear after POST
@@ -173,6 +175,21 @@ function RegisterProfileSection({
           </p>
         </div>
 
+        {/* Card type */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Tipo de tarjeta
+          </label>
+          <select
+            value={cardType}
+            onChange={(e) => setCardType(e.target.value as "credit_card" | "debit_card")}
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="credit_card">credit_card</option>
+            <option value="debit_card">debit_card</option>
+          </select>
+        </div>
+
         {error && (
           <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
             {error}
@@ -232,8 +249,10 @@ function RegisterProfileSection({
 
 function ChargeSection({
   subscriptions,
+  onCharged,
 }: {
   subscriptions: BSubscriptionResponse[];
+  onCharged: () => void;
 }) {
   const [selectedSubId, setSelectedSubId] = useState("");
   const [amount, setAmount] = useState("");
@@ -297,8 +316,9 @@ function ChargeSection({
       }
       const result = await chargeNow(payload);
       setChargeResult(result);
-      // Refresh charge list after new charge
+      // Refresh charge list and main subscriptions table after new charge
       void fetchSubCharges(selectedSubId);
+      onCharged();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Charge failed");
     } finally {
@@ -557,7 +577,7 @@ export function BOrders() {
 
       <hr className="border-gray-200 my-8" />
 
-      <ChargeSection subscriptions={subscriptions} />
+      <ChargeSection subscriptions={subscriptions} onCharged={fetchSubscriptions} />
 
       <hr className="border-gray-200 my-8" />
 

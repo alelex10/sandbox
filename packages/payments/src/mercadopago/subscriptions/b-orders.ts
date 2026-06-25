@@ -24,6 +24,8 @@ export interface CreatePaymentProfileInput {
    * Sent as the `id` field inside payment_methods[].
    */
   paymentMethodId: string;
+  /** Card type sent to MP inside payment_methods[].type. Defaults to "credit_card". */
+  cardType: "credit_card" | "debit_card";
   /** Human-readable name shown on the customer statement. */
   statementDescriptor?: string;
 }
@@ -100,7 +102,7 @@ export async function createPaymentProfile(
     payment_methods: [
       {
         id: input.paymentMethodId,
-        type: "credit_card",
+        type: input.cardType,
         token: input.cardToken,
         default_method: true,
       },

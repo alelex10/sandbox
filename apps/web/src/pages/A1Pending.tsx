@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { ResponsePanel } from "../components/ResponsePanel.js";
 import { WebhookList } from "../components/WebhookList.js";
-import { ConfigErrorDisplay } from "../components/ConfigError.js";
-import { createA1, searchA1, listA1, ConfigError } from "../api.js";
+import { createA1, searchA1, listA1 } from "../api.js";
 import type { SubscriptionResponse } from "shared";
 
 interface FormState {
@@ -273,15 +272,9 @@ export function A1Pending() {
         </fieldset>
 
         {error && (
-          <>
-            {error instanceof ConfigError ? (
-              <ConfigErrorDisplay error={error} />
-            ) : (
-              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-                {error.message}
-              </p>
-            )}
-          </>
+          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+            {error.message}
+          </p>
         )}
 
         <button

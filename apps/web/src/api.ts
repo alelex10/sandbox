@@ -10,17 +10,6 @@ import type {
   ChargeOrderRequest,
 } from "shared";
 
-export class ConfigError extends Error {
-  isConfigError = true;
-  details?: string[];
-
-  constructor(message: string, details?: string[]) {
-    super(message);
-    this.name = "ConfigError";
-    this.details = details;
-  }
-}
-
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
 async function post<T>(path: string, body: unknown): Promise<T> {
@@ -31,13 +20,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    const errorData = err as { error?: string; details?: string[]; message?: string };
-    
-    // Handle configuration errors specifically
-    if (errorData.error === "Configuration error") {
-      throw new ConfigError(errorData.message || "Server configuration error", errorData.details);
-    }
-    
+    const errorData = err as { error?: string };
     throw new Error(errorData.error ?? res.statusText);
   }
   return res.json() as Promise<T>;
@@ -47,13 +30,7 @@ async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${API}${path}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    const errorData = err as { error?: string; details?: string[]; message?: string };
-    
-    // Handle configuration errors specifically
-    if (errorData.error === "Configuration error") {
-      throw new ConfigError(errorData.message || "Server configuration error", errorData.details);
-    }
-    
+    const errorData = err as { error?: string };
     throw new Error(errorData.error ?? res.statusText);
   }
   return res.json() as Promise<T>;

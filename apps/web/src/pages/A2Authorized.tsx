@@ -3,8 +3,7 @@ import { ResponsePanel } from "../components/ResponsePanel.js";
 import { WebhookList } from "../components/WebhookList.js";
 import { CardFormMpJs } from "../components/CardFormMpJs.js";
 import { CardBrick } from "../components/CardBrick.js";
-import { ConfigErrorDisplay } from "../components/ConfigError.js";
-import { createA2, searchA2, listA2, ConfigError } from "../api.js";
+import { createA2, searchA2, listA2 } from "../api.js";
 import type { SubscriptionResponse, Tokenization } from "shared";
 
 const PUBLIC_KEY = import.meta.env.VITE_MP_PUBLIC_KEY as string;
@@ -360,15 +359,9 @@ export function A2Authorized() {
         </fieldset>
 
         {error && (
-          <>
-            {error instanceof ConfigError ? (
-              <ConfigErrorDisplay error={error} />
-            ) : (
-              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-                {error.message}
-              </p>
-            )}
-          </>
+          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+            {error.message}
+          </p>
         )}
 
         <button

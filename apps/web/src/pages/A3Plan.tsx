@@ -3,14 +3,12 @@ import { ResponsePanel } from "../components/ResponsePanel.js";
 import { WebhookList } from "../components/WebhookList.js";
 import { CardFormMpJs } from "../components/CardFormMpJs.js";
 import { CardBrick } from "../components/CardBrick.js";
-import { ConfigErrorDisplay } from "../components/ConfigError.js";
 import {
   createPlan,
   listA3Plans,
   subscribeToPlan,
   listA3,
   searchA3,
-  ConfigError,
 } from "../api.js";
 import type {
   PlanResponse,
@@ -213,15 +211,9 @@ function CreatePlanSection({
         </fieldset>
 
         {error && (
-          <>
-            {error instanceof ConfigError ? (
-              <ConfigErrorDisplay error={error} />
-            ) : (
-              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-                {error.message}
-              </p>
-            )}
-          </>
+          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+            {error.message}
+          </p>
         )}
 
         <button
@@ -550,15 +542,9 @@ function SubscribeSection({
         )}
 
         {error && (
-          <>
-            {error instanceof ConfigError ? (
-              <ConfigErrorDisplay error={error} />
-            ) : (
-              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-                {error.message}
-              </p>
-            )}
-          </>
+          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+            {error.message}
+          </p>
         )}
 
         <button

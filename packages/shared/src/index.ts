@@ -66,6 +66,7 @@ export const CreatePaymentProfileRequest = z.object({
   cardTokenId: z.string().min(1),
   tokenization: Tokenization,
   paymentMethodId: z.string().min(1),
+  cardType: z.enum(["credit_card", "debit_card"]).default("credit_card"),
 });
 export type CreatePaymentProfileRequest = z.infer<typeof CreatePaymentProfileRequest>;
 
