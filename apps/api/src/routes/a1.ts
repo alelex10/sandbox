@@ -34,29 +34,34 @@ a1Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
       },
     });
 
-    const subscription = await db.subscription.create({
-      data: {
-        method: "a1_pending",
-        mpId: result.id ?? null,
-        status: result.status ?? null,
-        externalReference,
-        payerEmail: body.payerEmail,
-        reason: body.reason,
-        amount: body.autoRecurring.amount,
-        currency: body.autoRecurring.currency,
-        startDate,
-        initPoint: result.init_point ?? null,
-        rawCreate: JSON.stringify(result),
-      },
-    });
+    const rawCreate = JSON.stringify(result);
 
-    await db.subscriptionSnapshot.create({
-      data: {
-        subscriptionId: subscription.id,
-        kind: "create",
-        statusAtTime: result.status ?? null,
-        raw: JSON.stringify(result),
-      },
+    // Atomic: subscription row + initial snapshot created together (M1).
+    const subscription = await db.$transaction(async (tx) => {
+      const sub = await tx.subscription.create({
+        data: {
+          method: "a1_pending",
+          mpId: result.id ?? null,
+          status: result.status ?? null,
+          externalReference,
+          payerEmail: body.payerEmail,
+          reason: body.reason,
+          amount: body.autoRecurring.amount,
+          currency: body.autoRecurring.currency,
+          startDate,
+          initPoint: result.init_point ?? null,
+          rawCreate,
+        },
+      });
+      await tx.subscriptionSnapshot.create({
+        data: {
+          subscriptionId: sub.id,
+          kind: "create",
+          statusAtTime: result.status != null ? String(result.status) : null,
+          raw: rawCreate,
+        },
+      });
+      return sub;
     });
 
     res.status(201).json({
@@ -141,17 +146,24 @@ a1Router.get(
         return;
       }
 
+      const mpStatus = (mpResult as Record<string, unknown>)?.status;
+      const rawSearch = JSON.stringify(mpResult);
+
       await db.subscription.update({
         where: { id: subscription.id },
-        data: { rawLastSearch: JSON.stringify(mpResult) },
+        // M2: also sync Subscription.status so sidebar badge reflects latest known state
+        data: {
+          rawLastSearch: rawSearch,
+          status: mpStatus != null ? String(mpStatus) : undefined,
+        },
       });
 
       await db.subscriptionSnapshot.create({
         data: {
           subscriptionId: subscription.id,
           kind: "search",
-          statusAtTime: (mpResult as Record<string, unknown>)?.status as string ?? null,
-          raw: JSON.stringify(mpResult),
+          statusAtTime: mpStatus != null ? String(mpStatus) : null,
+          raw: rawSearch,
         },
       });
 

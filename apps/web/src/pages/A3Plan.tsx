@@ -3,6 +3,7 @@ import { ResponsePanel } from "../components/ResponsePanel.js";
 import { WebhookList } from "../components/WebhookList.js";
 import { TimelineView } from "../components/TimelineView.js";
 import { Card } from "../components/Card.js";
+import { StatusBadge } from "../components/StatusBadge.js";
 import { CardFormMpJs } from "../components/CardFormMpJs.js";
 import { CardBrick } from "../components/CardBrick.js";
 import {
@@ -31,23 +32,6 @@ interface PlanFormState {
   amount: string;
   currency: string;
   billingDay: string;
-}
-
-function StatusBadge({ status }: { status: string | null }) {
-  const s = status ?? "unknown";
-  const cls =
-    s === "authorized"
-      ? "bg-green-100 text-green-700"
-      : s === "pending"
-        ? "bg-yellow-100 text-yellow-700"
-        : s === "pending_redirect"
-          ? "bg-blue-100 text-blue-700"
-          : s === "cancelled"
-            ? "bg-red-100 text-red-700"
-            : "bg-gray-100 text-gray-600";
-  return (
-    <span className={`text-xs rounded px-1.5 py-0.5 font-medium ${cls}`}>{s}</span>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -176,7 +160,7 @@ export function A3Plan() {
   }, []);
 
   function selectSubscription(id: string) {
-    if (selectedId === id) return;
+    // H2: removed early-return so re-clicking always refetches the detail
     setSelectedId(id);
     setDetail(null);
     setSearchResult(null);
@@ -675,6 +659,15 @@ export function A3Plan() {
                 <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
                   <span className="text-xs text-gray-500 font-mono">{selectedSub.id}</span>
                   <StatusBadge status={selectedSub.status} />
+                  <button
+                    type="button"
+                    onClick={() => { if (selectedId) void fetchDetail(selectedId); }}
+                    disabled={detailLoading}
+                    className="ml-auto text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                    title="Refetch timeline"
+                  >
+                    {detailLoading ? "..." : "↻ Actualizar"}
+                  </button>
                 </div>
                 {selectedSub.status === "pending_redirect" && selectedSub.initPoint && (
                   <div className="mb-4 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">

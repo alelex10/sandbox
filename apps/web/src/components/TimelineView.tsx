@@ -22,17 +22,18 @@ function formatAt(iso: string): string {
 
 interface TimelineEntryProps {
   entry: TimelineEntryResponse;
+  isLast: boolean;
 }
 
-function TimelineEntry({ entry }: TimelineEntryProps) {
+function TimelineEntry({ entry, isLast }: TimelineEntryProps) {
   const [expanded, setExpanded] = useState(false);
   const badgeClass = TYPE_STYLES[entry.type] ?? "bg-gray-100 text-gray-700";
   const hasData = entry.data !== null && entry.data !== undefined;
 
   return (
-    <li className="relative pl-6 pb-4 last:pb-0">
-      {/* Vertical connector */}
-      <span className="absolute left-1.5 top-2 bottom-0 w-px bg-gray-200 last:hidden" aria-hidden="true" />
+    <li className="relative pl-6 pb-4">
+      {/* Vertical connector — hidden for the last entry (M4) */}
+      {!isLast && <span className="absolute left-1.5 top-2 bottom-0 w-px bg-gray-200" aria-hidden="true" />}
       {/* Dot */}
       <span className="absolute left-0 top-1.5 h-3 w-3 rounded-full border-2 border-white bg-gray-300" aria-hidden="true" />
 
@@ -89,8 +90,8 @@ export function TimelineView({ entries, loading = false }: TimelineViewProps) {
 
   return (
     <ol className="space-y-0">
-      {entries.map((entry) => (
-        <TimelineEntry key={entry.id} entry={entry} />
+      {entries.map((entry, idx) => (
+        <TimelineEntry key={entry.id} entry={entry} isLast={idx === entries.length - 1} />
       ))}
     </ol>
   );

@@ -3,6 +3,7 @@ import { ResponsePanel } from "../components/ResponsePanel.js";
 import { WebhookList } from "../components/WebhookList.js";
 import { TimelineView } from "../components/TimelineView.js";
 import { Card } from "../components/Card.js";
+import { StatusBadge } from "../components/StatusBadge.js";
 import { createA1, searchA1, listA1, getA1Detail } from "../api.js";
 import type { SubscriptionResponse, SubscriptionDetailResponse } from "shared";
 
@@ -33,20 +34,6 @@ function tomorrow(): string {
   );
 }
 
-function StatusBadge({ status }: { status: string | null }) {
-  const s = status ?? "unknown";
-  const cls =
-    s === "authorized"
-      ? "bg-green-100 text-green-700"
-      : s === "pending"
-        ? "bg-yellow-100 text-yellow-700"
-        : s === "cancelled"
-          ? "bg-red-100 text-red-700"
-          : "bg-gray-100 text-gray-600";
-  return (
-    <span className={`text-xs rounded px-1.5 py-0.5 font-medium ${cls}`}>{s}</span>
-  );
-}
 
 export function A1Pending() {
   const [form, setForm] = useState<FormState>({
@@ -98,7 +85,7 @@ export function A1Pending() {
   }, []);
 
   function selectSubscription(id: string) {
-    if (selectedId === id) return;
+    // H2: removed early-return so re-clicking always refetches the detail
     setSelectedId(id);
     setDetail(null);
     setSearchResult(null);
@@ -400,6 +387,15 @@ export function A1Pending() {
                 <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
                   <span className="text-xs text-gray-500 font-mono">{selectedSub.id}</span>
                   <StatusBadge status={selectedSub.status} />
+                  <button
+                    type="button"
+                    onClick={() => { if (selectedId) void fetchDetail(selectedId); }}
+                    disabled={detailLoading}
+                    className="ml-auto text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                    title="Refetch timeline"
+                  >
+                    {detailLoading ? "..." : "↻ Actualizar"}
+                  </button>
                 </div>
                 <TimelineView
                   entries={detail?.timeline ?? []}

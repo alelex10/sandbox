@@ -44,27 +44,36 @@ bRouter.post("/profiles", async (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    const subscription = await db.subscription.create({
-      data: {
-        method: "b_orders",
-        status: mpStatus,
-        paymentProfileId,
-        customerId,
-        tokenization: body.tokenization,
-        // amount and currency are per-charge for B; no fixed recurring amount here
-        amount: 0,
-        currency: "ARS",
-        rawCreate: JSON.stringify(mpResult),
-      },
-    });
+    // Generate externalReference so MP webhook enrichment can attribute
+    // payment/order events back to this B subscription via external_reference.
+    const externalReference = crypto.randomUUID();
+    const snapshotRaw = JSON.stringify(mpResult);
 
-    await db.subscriptionSnapshot.create({
-      data: {
-        subscriptionId: subscription.id,
-        kind: "create",
-        statusAtTime: mpStatus,
-        raw: JSON.stringify(mpResult),
-      },
+    // Atomic: subscription row + initial snapshot created together (M1).
+    const subscription = await db.$transaction(async (tx) => {
+      const sub = await tx.subscription.create({
+        data: {
+          method: "b_orders",
+          status: mpStatus,
+          externalReference,
+          paymentProfileId,
+          customerId,
+          tokenization: body.tokenization,
+          // amount and currency are per-charge for B; no fixed recurring amount here
+          amount: 0,
+          currency: "ARS",
+          rawCreate: snapshotRaw,
+        },
+      });
+      await tx.subscriptionSnapshot.create({
+        data: {
+          subscriptionId: sub.id,
+          kind: "create",
+          statusAtTime: mpStatus != null ? String(mpStatus) : null,
+          raw: snapshotRaw,
+        },
+      });
+      return sub;
     });
 
     res.status(201).json({
@@ -121,7 +130,9 @@ bRouter.post("/charge", async (req: Request, res: Response, next: NextFunction) 
       return;
     }
 
-    const externalReference = `charge-${subscription.id}-${Date.now()}`;
+    // Use the subscription's stored externalReference so MP echoes it back on
+    // order/payment webhooks and the enrichment path can attribute them (H1).
+    const externalReference = subscription.externalReference ?? `charge-${subscription.id}-${Date.now()}`;
 
     let mpResult: unknown;
     try {

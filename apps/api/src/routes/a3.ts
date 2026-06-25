@@ -133,30 +133,36 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
         backUrl: getMpBackUrl(),
       });
 
-      const subscription = await db.subscription.create({
-        data: {
-          method: "a3_plan",
-          mpId: (result as { id?: string }).id ?? null,
-          // Persist whatever status MP returns — do not assume "authorized"
-          status: (result as { status?: string }).status ?? null,
-          externalReference: body.externalReference,
-          payerEmail: body.payerEmail,
-          preapprovalPlanId: body.preapprovalPlanId,
-          tokenization: body.tokenization ?? null,
-          // A.3 API subscriptions do not carry amount/currency directly — plan holds them
-          amount: 0,
-          currency: "ARS",
-          rawCreate: JSON.stringify(result),
-        },
-      });
+      const rawCreate = JSON.stringify(result);
+      const resultStatus = (result as { status?: string }).status;
 
-      await db.subscriptionSnapshot.create({
-        data: {
-          subscriptionId: subscription.id,
-          kind: "create",
-          statusAtTime: (result as { status?: string }).status ?? null,
-          raw: JSON.stringify(result),
-        },
+      // Atomic: subscription row + initial snapshot created together (M1).
+      const subscription = await db.$transaction(async (tx) => {
+        const sub = await tx.subscription.create({
+          data: {
+            method: "a3_plan",
+            mpId: (result as { id?: string }).id ?? null,
+            // Persist whatever status MP returns — do not assume "authorized"
+            status: resultStatus ?? null,
+            externalReference: body.externalReference,
+            payerEmail: body.payerEmail,
+            preapprovalPlanId: body.preapprovalPlanId,
+            tokenization: body.tokenization ?? null,
+            // A.3 API subscriptions do not carry amount/currency directly — plan holds them
+            amount: 0,
+            currency: "ARS",
+            rawCreate,
+          },
+        });
+        await tx.subscriptionSnapshot.create({
+          data: {
+            subscriptionId: sub.id,
+            kind: "create",
+            statusAtTime: resultStatus != null ? String(resultStatus) : null,
+            raw: rawCreate,
+          },
+        });
+        return sub;
       });
 
       res.status(201).json({
@@ -191,28 +197,31 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
       const initPoint = plan.initPoint;
 
       // Persist a Subscription record to track this redirect-based subscription attempt
-      const subscription = await db.subscription.create({
-        data: {
-          method: "a3_plan",
-          mpId: null,
-          status: "pending_redirect",
-          externalReference: body.externalReference,
-          payerEmail: body.payerEmail,
-          preapprovalPlanId: body.preapprovalPlanId,
-          initPoint,
-          amount: 0,
-          currency: "ARS",
-          rawCreate: null,
-        },
-      });
-
-      await db.subscriptionSnapshot.create({
-        data: {
-          subscriptionId: subscription.id,
-          kind: "create",
-          statusAtTime: "pending_redirect",
-          raw: "{}",
-        },
+      // Atomic: subscription row + initial snapshot created together (M1).
+      const subscription = await db.$transaction(async (tx) => {
+        const sub = await tx.subscription.create({
+          data: {
+            method: "a3_plan",
+            mpId: null,
+            status: "pending_redirect",
+            externalReference: body.externalReference,
+            payerEmail: body.payerEmail,
+            preapprovalPlanId: body.preapprovalPlanId,
+            initPoint,
+            amount: 0,
+            currency: "ARS",
+            rawCreate: null,
+          },
+        });
+        await tx.subscriptionSnapshot.create({
+          data: {
+            subscriptionId: sub.id,
+            kind: "create",
+            statusAtTime: "pending_redirect",
+            raw: "{}",
+          },
+        });
+        return sub;
       });
 
       // Fix #7: 201 for redirect-path creation (consistent with API path)
@@ -303,17 +312,24 @@ a3Router.get(
         return;
       }
 
+      const mpStatus = (mpResult as Record<string, unknown>)?.status;
+      const rawSearch = JSON.stringify(mpResult);
+
       await db.subscription.update({
         where: { id: subscription.id },
-        data: { rawLastSearch: JSON.stringify(mpResult) },
+        // M2: also sync Subscription.status so sidebar badge reflects latest known state
+        data: {
+          rawLastSearch: rawSearch,
+          status: mpStatus != null ? String(mpStatus) : undefined,
+        },
       });
 
       await db.subscriptionSnapshot.create({
         data: {
           subscriptionId: subscription.id,
           kind: "search",
-          statusAtTime: (mpResult as Record<string, unknown>)?.status as string ?? null,
-          raw: JSON.stringify(mpResult),
+          statusAtTime: mpStatus != null ? String(mpStatus) : null,
+          raw: rawSearch,
         },
       });
 
