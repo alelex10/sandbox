@@ -1,0 +1,9 @@
+{
+  "name": "sandbox",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --parallel --filter ./apps/* dev",
+    "db:push": "pnpm --filter api db:push",
+    "db:generate": "pnpm --filter api db:generate"
+  }
+}
