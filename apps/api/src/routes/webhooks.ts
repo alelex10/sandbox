@@ -142,6 +142,8 @@ function topicToResourcePath(
     case "subscription_preapproval":
       return `/preapproval/${resourceId}`;
     case "subscription_authorized_payment":
+      // Confirmed: /authorized_payments/{id} is the correct enrichment path.
+      // Source: mercadopago SDK v3 dist/clients/invoice/get/index.js line ~25.
       return `/authorized_payments/${resourceId}`;
     case "subscription_preapproval_plan":
       return `/preapproval_plan/${resourceId}`;

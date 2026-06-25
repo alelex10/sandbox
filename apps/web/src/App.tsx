@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { SubscriptionMethod } from "shared";
 import { A1Pending } from "./pages/A1Pending.js";
+import { A2Authorized } from "./pages/A2Authorized.js";
 
 const TABS: { label: string; value: SubscriptionMethod }[] = [
   { label: "A.1 Preapproval Pending", value: "a1_pending" },
@@ -54,6 +55,8 @@ export function App() {
       <main>
         {activeMethod === "a1_pending" ? (
           <A1Pending />
+        ) : activeMethod === "a2_authorized" ? (
+          <A2Authorized />
         ) : (
           <PlaceholderPage method={activeMethod} />
         )}

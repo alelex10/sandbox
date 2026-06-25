@@ -2,6 +2,7 @@ import type {
   SubscriptionMethod,
   WebhookEventResponse,
   CreateA1Request,
+  CreateA2Request,
   SubscriptionResponse,
 } from "shared";
 
@@ -54,6 +55,22 @@ export function listA1(): Promise<SubscriptionResponse[]> {
 
 export function searchA1(id: string): Promise<unknown> {
   return get<unknown>(`/a1/${encodeURIComponent(id)}/mp`);
+}
+
+// ---------------------------------------------------------------------------
+// A.2 — Preapproval Authorized
+// ---------------------------------------------------------------------------
+
+export function createA2(body: CreateA2Request): Promise<SubscriptionResponse> {
+  return post<SubscriptionResponse>("/a2", body);
+}
+
+export function listA2(): Promise<SubscriptionResponse[]> {
+  return get<SubscriptionResponse[]>("/a2");
+}
+
+export function searchA2(id: string): Promise<unknown> {
+  return get<unknown>(`/a2/${encodeURIComponent(id)}/mp`);
 }
 
 export { post, get };

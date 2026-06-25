@@ -9,12 +9,14 @@ import cors from "cors";
 import { ZodError } from "zod";
 import { webhooksRouter } from "./routes/webhooks.js";
 import { a1Router } from "./routes/a1.js";
+import { a2Router } from "./routes/a2.js";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use("/webhooks", webhooksRouter);
 app.use("/a1", a1Router);
+app.use("/a2", a2Router);
 
 // Global error handler — must have 4 params so Express recognises it as error middleware
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction): void => {
