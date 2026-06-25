@@ -3,6 +3,8 @@ import type {
   WebhookEventResponse,
   CreateA1Request,
   CreateA2Request,
+  CreatePlanRequest,
+  SubscribeToPlanRequest,
   SubscriptionResponse,
 } from "shared";
 
@@ -71,6 +73,58 @@ export function listA2(): Promise<SubscriptionResponse[]> {
 
 export function searchA2(id: string): Promise<unknown> {
   return get<unknown>(`/a2/${encodeURIComponent(id)}/mp`);
+}
+
+// ---------------------------------------------------------------------------
+// A.3 — Preapproval Plan
+// ---------------------------------------------------------------------------
+
+export interface PlanResponse {
+  id: string;
+  mpPlanId: string | null;
+  reason: string | null;
+  amount: number;
+  currency: string;
+  frequency: number;
+  frequencyType: string;
+  initPoint: string | null;
+  rawCreate: unknown;
+  createdAt: string;
+}
+
+export interface SubscribeResult {
+  path: "api" | "redirect";
+  id: string;
+  method: string;
+  mpId: string | null;
+  status: string | null;
+  preapprovalPlanId: string | null;
+  tokenization: string | null;
+  initPoint: string | null;
+  rawCreate: unknown;
+  rawLastSearch: unknown;
+  createdAt: string;
+  message?: string;
+}
+
+export function createPlan(body: CreatePlanRequest): Promise<PlanResponse> {
+  return post<PlanResponse>("/a3/plans", body);
+}
+
+export function listA3Plans(): Promise<PlanResponse[]> {
+  return get<PlanResponse[]>("/a3/plans");
+}
+
+export function subscribeToPlan(body: SubscribeToPlanRequest): Promise<SubscribeResult> {
+  return post<SubscribeResult>("/a3/subscribe", body);
+}
+
+export function listA3(): Promise<SubscriptionResponse[]> {
+  return get<SubscriptionResponse[]>("/a3");
+}
+
+export function searchA3(id: string): Promise<unknown> {
+  return get<unknown>(`/a3/${encodeURIComponent(id)}/mp`);
 }
 
 export { post, get };
