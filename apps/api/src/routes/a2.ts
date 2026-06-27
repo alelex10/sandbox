@@ -120,6 +120,19 @@ a2Router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+// DELETE /a2 — bulk soft-delete all a2_authorized subscriptions
+a2Router.delete("/", async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await db.subscription.updateMany({
+      where: { method: "a2_authorized", deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
+    res.json({ ok: true, count: result.count });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /a2/:id — soft-delete a subscription
 a2Router.delete(
   "/:id",

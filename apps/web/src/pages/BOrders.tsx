@@ -12,6 +12,7 @@ import {
   listB,
   getBDetail,
   deleteB,
+  deleteAllB,
 } from "../api.js";
 import type {
   BSubscriptionResponse,
@@ -423,7 +424,28 @@ export function BOrders() {
           <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
             <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">Suscripciones</h3>
-              <span className="text-xs text-gray-400">{subscriptions.length}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400">{subscriptions.length}</span>
+                {subscriptions.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!window.confirm("¿Eliminar TODO el historial de esta sección? (borrado lógico, los datos se conservan)")) return;
+                      try {
+                        await deleteAllB();
+                        await fetchSubscriptions();
+                        setSelectedId(null);
+                        setDetail(null);
+                      } catch (err) {
+                        window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
+                      }
+                    }}
+                    className="text-xs text-red-400 hover:text-red-600 transition-colors"
+                  >
+                    Eliminar todo
+                  </button>
+                )}
+              </div>
             </div>
             <ul className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
               {subscriptions.length === 0 && (

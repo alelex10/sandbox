@@ -4,7 +4,7 @@ import { WebhookList } from "../components/WebhookList.js";
 import { TimelineView } from "../components/TimelineView.js";
 import { Card } from "../components/Card.js";
 import { StatusBadge } from "../components/StatusBadge.js";
-import { createA1, searchA1, listA1, getA1Detail, deleteA1 } from "../api.js";
+import { createA1, searchA1, listA1, getA1Detail, deleteA1, deleteAllA1 } from "../api.js";
 import type { SubscriptionResponse, SubscriptionDetailResponse } from "shared";
 
 interface FormState {
@@ -189,7 +189,29 @@ export function A1Pending() {
           <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
             <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">Suscripciones</h3>
-              <span className="text-xs text-gray-400">{history.length}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-400">{history.length}</span>
+                {history.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!window.confirm("¿Eliminar TODO el historial de esta sección? (borrado lógico, los datos se conservan)")) return;
+                      try {
+                        await deleteAllA1();
+                        await fetchHistory();
+                        setSelectedId(null);
+                        setDetail(null);
+                        setSearchResult(null);
+                      } catch (err) {
+                        window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
+                      }
+                    }}
+                    className="text-xs text-red-400 hover:text-red-600 transition-colors"
+                  >
+                    Eliminar todo
+                  </button>
+                )}
+              </div>
             </div>
             <ul className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
               {history.length === 0 && (

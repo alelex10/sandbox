@@ -117,6 +117,19 @@ a1Router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+// DELETE /a1 — bulk soft-delete all a1_pending subscriptions
+a1Router.delete("/", async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await db.subscription.updateMany({
+      where: { method: "a1_pending", deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
+    res.json({ ok: true, count: result.count });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /a1/:id — soft-delete a subscription
 a1Router.delete(
   "/:id",

@@ -39,6 +39,19 @@ a3Router.get("/plans", async (_req: Request, res: Response, next: NextFunction) 
   }
 });
 
+// DELETE /a3/plans — bulk soft-delete all plans (registered before /plans/:id)
+a3Router.delete("/plans", async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await db.plan.updateMany({
+      where: { deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
+    res.json({ ok: true, count: result.count });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /a3/plans/:id — soft-delete a plan
 a3Router.delete(
   "/plans/:id",
@@ -431,6 +444,19 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
         message: "Redirect the payer to initPoint to complete subscription.",
       });
     }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /a3 — bulk soft-delete all a3_plan subscriptions
+a3Router.delete("/", async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await db.subscription.updateMany({
+      where: { method: "a3_plan", deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
+    res.json({ ok: true, count: result.count });
   } catch (err) {
     next(err);
   }

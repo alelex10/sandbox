@@ -232,6 +232,19 @@ bRouter.get("/", async (_req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+// DELETE /b — bulk soft-delete all b_orders subscriptions
+bRouter.delete("/", async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await db.subscription.updateMany({
+      where: { method: "b_orders", deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
+    res.json({ ok: true, count: result.count });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /b/:id — soft-delete a b_orders subscription
 bRouter.delete(
   "/:id",

@@ -249,4 +249,28 @@ export function deletePlan(id: string): Promise<{ ok: boolean }> {
   return del<{ ok: boolean }>(`/a3/plans/${encodeURIComponent(id)}`);
 }
 
+// ---------------------------------------------------------------------------
+// Bulk soft-delete helpers
+// ---------------------------------------------------------------------------
+
+export function deleteAllA1(): Promise<{ ok: boolean; count: number }> {
+  return del<{ ok: boolean; count: number }>("/a1");
+}
+
+export function deleteAllA2(): Promise<{ ok: boolean; count: number }> {
+  return del<{ ok: boolean; count: number }>("/a2");
+}
+
+export function deleteAllA3(): Promise<{ ok: boolean; count: number }> {
+  return del<{ ok: boolean; count: number }>("/a3");
+}
+
+export function deleteAllB(): Promise<{ ok: boolean; count: number }> {
+  return del<{ ok: boolean; count: number }>("/b");
+}
+
+export function deleteAllPlans(): Promise<{ ok: boolean; count: number }> {
+  return del<{ ok: boolean; count: number }>("/a3/plans");
+}
+
 export { post, get, del };
