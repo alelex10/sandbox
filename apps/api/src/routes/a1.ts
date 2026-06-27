@@ -83,7 +83,7 @@ a1Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
 a1Router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const subscriptions = await db.subscription.findMany({
-      where: { method: "a1_pending" },
+      where: { method: "a1_pending", deletedAt: null },
       include: { events: { orderBy: { receivedAt: "desc" } } },
       orderBy: { createdAt: "desc" },
     });
@@ -117,6 +117,33 @@ a1Router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+// DELETE /a1/:id — soft-delete a subscription
+a1Router.delete(
+  "/:id",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const subscription = await db.subscription.findUnique({
+        where: { id: req.params.id },
+      });
+      if (!subscription || subscription.method !== "a1_pending") {
+        res.status(404).json({ error: "Subscription not found" });
+        return;
+      }
+      if (subscription.deletedAt !== null) {
+        res.status(404).json({ error: "Subscription already deleted" });
+        return;
+      }
+      const updated = await db.subscription.update({
+        where: { id: req.params.id },
+        data: { deletedAt: new Date() },
+      });
+      res.json({ ok: true, id: updated.id, deletedAt: updated.deletedAt });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // GET /a1/:id/mp — fetch live MP state, update rawLastSearch, return result
 a1Router.get(
   "/:id/mp",
@@ -127,6 +154,11 @@ a1Router.get(
       });
 
       if (!subscription || subscription.method !== "a1_pending") {
+        res.status(404).json({ error: "Subscription not found" });
+        return;
+      }
+
+      if (subscription.deletedAt !== null) {
         res.status(404).json({ error: "Subscription not found" });
         return;
       }
@@ -188,7 +220,7 @@ a1Router.get(
         },
       });
 
-      if (!subscription || subscription.method !== "a1_pending") {
+      if (!subscription || subscription.method !== "a1_pending" || subscription.deletedAt !== null) {
         res.status(404).json({ error: "Subscription not found" });
         return;
       }

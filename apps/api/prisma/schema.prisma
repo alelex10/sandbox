@@ -27,6 +27,7 @@ model Subscription {
   rawLastSearch     String?
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
+  deletedAt         DateTime?
   events            WebhookEvent[]
   charges           OrderCharge[]
   snapshots         SubscriptionSnapshot[]
@@ -58,6 +59,7 @@ model Plan {
   rawCreate     String?
   rawLastSearch String?
   createdAt     DateTime        @default(now())
+  deletedAt     DateTime?
   snapshots     PlanSnapshot[]
 }
 

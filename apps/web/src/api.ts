@@ -38,6 +38,16 @@ async function get<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function del<T>(path: string): Promise<T> {
+  const res = await fetch(`${API}${path}`, { method: "DELETE" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    const errorData = err as { error?: string };
+    throw new Error(errorData.error ?? res.statusText);
+  }
+  return res.json() as Promise<T>;
+}
+
 // ---------------------------------------------------------------------------
 // Webhooks
 // ---------------------------------------------------------------------------
@@ -215,4 +225,28 @@ export function getBDetail(id: string): Promise<SubscriptionDetailResponse> {
   return get<SubscriptionDetailResponse>(`/b/${encodeURIComponent(id)}`);
 }
 
-export { post, get };
+// ---------------------------------------------------------------------------
+// Soft-delete helpers
+// ---------------------------------------------------------------------------
+
+export function deleteA1(id: string): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>(`/a1/${encodeURIComponent(id)}`);
+}
+
+export function deleteA2(id: string): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>(`/a2/${encodeURIComponent(id)}`);
+}
+
+export function deleteA3(id: string): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>(`/a3/${encodeURIComponent(id)}`);
+}
+
+export function deleteB(id: string): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>(`/b/${encodeURIComponent(id)}`);
+}
+
+export function deletePlan(id: string): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>(`/a3/plans/${encodeURIComponent(id)}`);
+}
+
+export { post, get, del };

@@ -4,7 +4,7 @@ import { WebhookList } from "../components/WebhookList.js";
 import { TimelineView } from "../components/TimelineView.js";
 import { Card } from "../components/Card.js";
 import { StatusBadge } from "../components/StatusBadge.js";
-import { createA1, searchA1, listA1, getA1Detail } from "../api.js";
+import { createA1, searchA1, listA1, getA1Detail, deleteA1 } from "../api.js";
 import type { SubscriptionResponse, SubscriptionDetailResponse } from "shared";
 
 interface FormState {
@@ -83,6 +83,22 @@ export function A1Pending() {
       setDetailLoading(false);
     }
   }, []);
+
+  async function handleDelete(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!window.confirm("¿Eliminar este registro del historial? (borrado lógico, los datos se conservan)")) return;
+    try {
+      await deleteA1(id);
+      await fetchHistory();
+      if (selectedId === id) {
+        setSelectedId(null);
+        setDetail(null);
+        setSearchResult(null);
+      }
+    } catch {
+      // non-critical
+    }
+  }
 
   function selectSubscription(id: string) {
     // H2: removed early-return so re-clicking always refetches the detail
@@ -180,12 +196,12 @@ export function A1Pending() {
                 <li className="px-4 py-3 text-xs text-gray-400 italic">None yet.</li>
               )}
               {history.map((sub) => (
-                <li key={sub.id}>
+                <li key={sub.id} className="relative group">
                   <button
                     type="button"
                     onClick={() => selectSubscription(sub.id)}
                     className={[
-                      "w-full text-left px-4 py-3 text-xs hover:bg-gray-50 transition-colors",
+                      "w-full text-left px-4 py-3 text-xs hover:bg-gray-50 transition-colors pr-8",
                       selectedId === sub.id ? "bg-blue-50 border-l-2 border-blue-500" : "",
                     ].join(" ")}
                   >
@@ -196,6 +212,14 @@ export function A1Pending() {
                         {new Date(sub.createdAt).toLocaleDateString()}
                       </span>
                     </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => void handleDelete(sub.id, e)}
+                    title="Eliminar del historial (borrado lógico)"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all p-1"
+                  >
+                    🗑
                   </button>
                 </li>
               ))}

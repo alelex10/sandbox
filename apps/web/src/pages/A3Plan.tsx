@@ -15,6 +15,8 @@ import {
   listA3,
   searchA3,
   getA3Detail,
+  deletePlan,
+  deleteA3,
 } from "../api.js";
 import type {
   PlanResponse,
@@ -183,6 +185,21 @@ function PlanesView({
     }
   }, []);
 
+  async function handleDeletePlan(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!window.confirm("¿Eliminar este registro del historial? (borrado lógico, los datos se conservan)")) return;
+    try {
+      await deletePlan(id);
+      onPlansRefresh();
+      if (selectedPlanId === id) {
+        setSelectedPlanId(null);
+        setPlanDetail(null);
+      }
+    } catch {
+      // non-critical
+    }
+  }
+
   function selectPlan(id: string) {
     setSelectedPlanId(id);
     setMpSearchResult(null);
@@ -205,7 +222,9 @@ function PlanesView({
         },
       };
       if (planForm.billingDay) payload.billingDay = Number(planForm.billingDay);
-      if (planForm.billingDayProportional) payload.billingDayProportional = true;
+      // Send the explicit boolean (not only-if-true): MP defaults the field to
+      // true when omitted, so unchecking must send false to override that default.
+      payload.billingDayProportional = planForm.billingDayProportional;
       const created = await createPlan(payload);
       setPlanResult(created);
       onPlansRefresh();
@@ -252,12 +271,12 @@ function PlanesView({
               <li className="px-4 py-3 text-xs text-gray-400 italic">None yet.</li>
             )}
             {plans.map((p) => (
-              <li key={p.id}>
+              <li key={p.id} className="relative group">
                 <button
                   type="button"
                   onClick={() => selectPlan(p.id)}
                   className={[
-                    "w-full text-left px-4 py-3 text-xs hover:bg-gray-50 transition-colors",
+                    "w-full text-left px-4 py-3 text-xs hover:bg-gray-50 transition-colors pr-8",
                     selectedPlanId === p.id ? "bg-blue-50 border-l-2 border-blue-500" : "",
                   ].join(" ")}
                 >
@@ -274,6 +293,14 @@ function PlanesView({
                   <div className="text-gray-400 mt-0.5">
                     {new Date(p.createdAt).toLocaleDateString()}
                   </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => void handleDeletePlan(p.id, e)}
+                  title="Eliminar del historial (borrado lógico)"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all p-1"
+                >
+                  🗑
                 </button>
               </li>
             ))}
@@ -592,6 +619,22 @@ function SuscripcionesView({
     }
   }, []);
 
+  async function handleDeleteSub(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!window.confirm("¿Eliminar este registro del historial? (borrado lógico, los datos se conservan)")) return;
+    try {
+      await deleteA3(id);
+      onSubscriptionsRefresh();
+      if (selectedId === id) {
+        setSelectedId(null);
+        setDetail(null);
+        setSearchResult(null);
+      }
+    } catch {
+      // non-critical
+    }
+  }
+
   function selectSubscription(id: string) {
     setSelectedId(id);
     setDetail(null);
@@ -683,12 +726,12 @@ function SuscripcionesView({
               <li className="px-4 py-3 text-xs text-gray-400 italic">None yet.</li>
             )}
             {subscriptions.map((sub) => (
-              <li key={sub.id}>
+              <li key={sub.id} className="relative group">
                 <button
                   type="button"
                   onClick={() => selectSubscription(sub.id)}
                   className={[
-                    "w-full text-left px-4 py-3 text-xs hover:bg-gray-50 transition-colors",
+                    "w-full text-left px-4 py-3 text-xs hover:bg-gray-50 transition-colors pr-8",
                     selectedId === sub.id ? "bg-blue-50 border-l-2 border-blue-500" : "",
                   ].join(" ")}
                 >
@@ -699,6 +742,14 @@ function SuscripcionesView({
                       {new Date(sub.createdAt).toLocaleDateString()}
                     </span>
                   </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => void handleDeleteSub(sub.id, e)}
+                  title="Eliminar del historial (borrado lógico)"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all p-1"
+                >
+                  🗑
                 </button>
               </li>
             ))}

@@ -15,6 +15,7 @@ export const a3Router = Router();
 a3Router.get("/plans", async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const plans = await db.plan.findMany({
+      where: { deletedAt: null },
       orderBy: { createdAt: "desc" },
     });
 
@@ -37,6 +38,33 @@ a3Router.get("/plans", async (_req: Request, res: Response, next: NextFunction) 
     next(err);
   }
 });
+
+// DELETE /a3/plans/:id — soft-delete a plan
+a3Router.delete(
+  "/plans/:id",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const plan = await db.plan.findUnique({
+        where: { id: req.params.id },
+      });
+      if (!plan) {
+        res.status(404).json({ error: "Plan not found" });
+        return;
+      }
+      if (plan.deletedAt !== null) {
+        res.status(404).json({ error: "Plan already deleted" });
+        return;
+      }
+      const updated = await db.plan.update({
+        where: { id: req.params.id },
+        data: { deletedAt: new Date() },
+      });
+      res.json({ ok: true, id: updated.id, deletedAt: updated.deletedAt });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // GET /a3/plans/:id/mp — fetch live MP state for a plan, append PlanSnapshot kind='search'
 a3Router.get(
@@ -107,6 +135,11 @@ a3Router.get(
       });
 
       if (!plan) {
+        res.status(404).json({ error: "Plan not found" });
+        return;
+      }
+
+      if (plan.deletedAt !== null) {
         res.status(404).json({ error: "Plan not found" });
         return;
       }
@@ -398,6 +431,33 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
   }
 });
 
+// DELETE /a3/:id — soft-delete an a3_plan subscription
+a3Router.delete(
+  "/:id",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const subscription = await db.subscription.findUnique({
+        where: { id: req.params.id },
+      });
+      if (!subscription || subscription.method !== "a3_plan") {
+        res.status(404).json({ error: "Subscription not found" });
+        return;
+      }
+      if (subscription.deletedAt !== null) {
+        res.status(404).json({ error: "Subscription already deleted" });
+        return;
+      }
+      const updated = await db.subscription.update({
+        where: { id: req.params.id },
+        data: { deletedAt: new Date() },
+      });
+      res.json({ ok: true, id: updated.id, deletedAt: updated.deletedAt });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // GET /a3/:id/mp — fetch live MP state for a subscription, update rawLastSearch, return result
 // Registered BEFORE /:id to avoid shadowing
 a3Router.get(
@@ -408,7 +468,7 @@ a3Router.get(
         where: { id: req.params.id },
       });
 
-      if (!subscription || subscription.method !== "a3_plan") {
+      if (!subscription || subscription.method !== "a3_plan" || subscription.deletedAt !== null) {
         res.status(404).json({ error: "Subscription not found" });
         return;
       }
@@ -473,7 +533,7 @@ a3Router.get(
         },
       });
 
-      if (!subscription || subscription.method !== "a3_plan") {
+      if (!subscription || subscription.method !== "a3_plan" || subscription.deletedAt !== null) {
         res.status(404).json({ error: "Subscription not found" });
         return;
       }
@@ -523,7 +583,7 @@ a3Router.get(
 a3Router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const subscriptions = await db.subscription.findMany({
-      where: { method: "a3_plan" },
+      where: { method: "a3_plan", deletedAt: null },
       include: { events: { orderBy: { receivedAt: "desc" } } },
       orderBy: { createdAt: "desc" },
     });

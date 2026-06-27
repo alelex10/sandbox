@@ -187,7 +187,7 @@ bRouter.post("/charge", async (req: Request, res: Response, next: NextFunction) 
 bRouter.get("/", async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const subscriptions = await db.subscription.findMany({
-      where: { method: "b_orders" },
+      where: { method: "b_orders", deletedAt: null },
       include: {
         charges: { orderBy: { createdAt: "desc" } },
         events: { orderBy: { receivedAt: "desc" } },
@@ -227,6 +227,33 @@ bRouter.get("/", async (_req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+// DELETE /b/:id — soft-delete a b_orders subscription
+bRouter.delete(
+  "/:id",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const subscription = await db.subscription.findUnique({
+        where: { id: req.params.id },
+      });
+      if (!subscription || subscription.method !== "b_orders") {
+        res.status(404).json({ error: "Subscription not found" });
+        return;
+      }
+      if (subscription.deletedAt !== null) {
+        res.status(404).json({ error: "Subscription already deleted" });
+        return;
+      }
+      const updated = await db.subscription.update({
+        where: { id: req.params.id },
+        data: { deletedAt: new Date() },
+      });
+      res.json({ ok: true, id: updated.id, deletedAt: updated.deletedAt });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // GET /b/:id — detail view: subscription + unified timeline (snapshots + webhooks + charges)
 // Express /:id only matches one path segment so /:id/charges is not shadowed by this route
 bRouter.get(
@@ -242,7 +269,7 @@ bRouter.get(
         },
       });
 
-      if (!subscription || subscription.method !== "b_orders") {
+      if (!subscription || subscription.method !== "b_orders" || subscription.deletedAt !== null) {
         res.status(404).json({ error: "Subscription not found" });
         return;
       }

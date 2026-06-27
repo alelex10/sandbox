@@ -85,7 +85,7 @@ a2Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
 a2Router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const subscriptions = await db.subscription.findMany({
-      where: { method: "a2_authorized" },
+      where: { method: "a2_authorized", deletedAt: null },
       include: { events: { orderBy: { receivedAt: "desc" } } },
       orderBy: { createdAt: "desc" },
     });
@@ -120,6 +120,33 @@ a2Router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+// DELETE /a2/:id — soft-delete a subscription
+a2Router.delete(
+  "/:id",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const subscription = await db.subscription.findUnique({
+        where: { id: req.params.id },
+      });
+      if (!subscription || subscription.method !== "a2_authorized") {
+        res.status(404).json({ error: "Subscription not found" });
+        return;
+      }
+      if (subscription.deletedAt !== null) {
+        res.status(404).json({ error: "Subscription already deleted" });
+        return;
+      }
+      const updated = await db.subscription.update({
+        where: { id: req.params.id },
+        data: { deletedAt: new Date() },
+      });
+      res.json({ ok: true, id: updated.id, deletedAt: updated.deletedAt });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // GET /a2/:id/mp — fetch live MP state, update rawLastSearch, return result
 a2Router.get(
   "/:id/mp",
@@ -130,6 +157,11 @@ a2Router.get(
       });
 
       if (!subscription || subscription.method !== "a2_authorized") {
+        res.status(404).json({ error: "Subscription not found" });
+        return;
+      }
+
+      if (subscription.deletedAt !== null) {
         res.status(404).json({ error: "Subscription not found" });
         return;
       }
@@ -191,7 +223,7 @@ a2Router.get(
         },
       });
 
-      if (!subscription || subscription.method !== "a2_authorized") {
+      if (!subscription || subscription.method !== "a2_authorized" || subscription.deletedAt !== null) {
         res.status(404).json({ error: "Subscription not found" });
         return;
       }
