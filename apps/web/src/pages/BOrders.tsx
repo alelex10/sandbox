@@ -7,6 +7,8 @@ import { StatusBadge } from "../components/StatusBadge.js";
 import { AdvancedSection } from "../components/AdvancedSection.js";
 import { CardFormMpJs } from "../components/CardFormMpJs.js";
 import { CardBrick } from "../components/CardBrick.js";
+import { SubViewToggle } from "../components/SubViewToggle.js";
+import { NotesView } from "../components/NotesView.js";
 import {
   createProfile,
   chargeNow,
@@ -15,14 +17,16 @@ import {
   deleteB,
   deleteAllB,
 } from "../api.js";
+import { PaymentsDiag, RecentPaymentsPanel } from "../components/PaymentsDiag.js";
 import type {
   BSubscriptionResponse,
   OrderChargeResponse,
   CreateProfileResponse,
 } from "../api.js";
 import type { SubscriptionDetailResponse, Tokenization } from "shared";
+import { MP_PUBLIC_KEY as PUBLIC_KEY } from "../config.js";
 
-const PUBLIC_KEY = import.meta.env.VITE_MP_PUBLIC_KEY as string;
+type SubView = "main" | "notas";
 
 type TokenizationMode = "mercadopagojs" | "brick";
 
@@ -519,6 +523,8 @@ function ChargeSection({
 // ---------------------------------------------------------------------------
 
 export function BOrders() {
+  const [subView, setSubView] = useState<SubView>("main");
+
   const [subscriptions, setSubscriptions] = useState<BSubscriptionResponse[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SubscriptionDetailResponse | null>(null);
@@ -598,6 +604,20 @@ export function BOrders() {
         </p>
       </div>
 
+      <div className="mb-6">
+        <SubViewToggle
+          value={subView}
+          onChange={setSubView}
+          opts={[
+            { key: "main", label: "Pagos" },
+            { key: "notas", label: "Notas" },
+          ]}
+        />
+      </div>
+
+      {subView === "notas" ? (
+        <NotesView method="b_orders" />
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-[18rem_1fr] gap-6">
         {/* ── Left sidebar ── */}
         <aside className="space-y-2">
@@ -749,6 +769,9 @@ export function BOrders() {
             )}
           </Card>
 
+          {/* Payments diagnostic card — only shown when a subscription is selected */}
+          {selectedId && <PaymentsDiag subscriptionId={selectedId} />}
+
           {/* Webhooks card */}
           <Card title="Webhook Events (live feed)">
             <p className="text-xs text-gray-500 mb-3">
@@ -757,8 +780,12 @@ export function BOrders() {
             </p>
             <WebhookList method="b_orders" />
           </Card>
+
+          {/* Global recent payments panel */}
+          <RecentPaymentsPanel />
         </div>
       </div>
+      )}
     </div>
   );
 }

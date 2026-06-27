@@ -5,8 +5,13 @@ import { TimelineView } from "../components/TimelineView.js";
 import { Card } from "../components/Card.js";
 import { StatusBadge } from "../components/StatusBadge.js";
 import { AdvancedSection } from "../components/AdvancedSection.js";
+import { SubViewToggle } from "../components/SubViewToggle.js";
+import { NotesView } from "../components/NotesView.js";
 import { createA1, searchA1, listA1, getA1Detail, deleteA1, deleteAllA1 } from "../api.js";
+import { PaymentsDiag } from "../components/PaymentsDiag.js";
 import type { SubscriptionResponse, SubscriptionDetailResponse } from "shared";
+
+type SubView = "main" | "notas";
 
 interface FormState {
   reason: string;
@@ -44,6 +49,8 @@ function tomorrow(): string {
 
 
 export function A1Pending() {
+  const [subView, setSubView] = useState<SubView>("main");
+
   const [form, setForm] = useState<FormState>({
     reason: "",
     payerEmail: "",
@@ -214,6 +221,20 @@ export function A1Pending() {
         </p>
       </div>
 
+      <div className="mb-6">
+        <SubViewToggle
+          value={subView}
+          onChange={setSubView}
+          opts={[
+            { key: "main", label: "Suscripciones" },
+            { key: "notas", label: "Notas" },
+          ]}
+        />
+      </div>
+
+      {subView === "notas" ? (
+        <NotesView method="a1_pending" />
+      ) : (
       <div className="grid grid-cols-1 lg:grid-cols-[18rem_1fr] gap-6">
         {/* ── Left sidebar ── */}
         <aside className="space-y-2">
@@ -572,6 +593,9 @@ export function A1Pending() {
             )}
           </Card>
 
+          {/* Payments diagnostic card — only shown when a subscription is selected */}
+          {selectedId && <PaymentsDiag subscriptionId={selectedId} />}
+
           {/* Webhooks card */}
           <Card title="Webhook Events (live feed)">
             <p className="text-xs text-gray-500 mb-3">
@@ -582,6 +606,7 @@ export function A1Pending() {
           </Card>
         </div>
       </div>
+      )}
     </div>
   );
 }

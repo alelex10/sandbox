@@ -205,3 +205,67 @@ export const WebhookEventResponse = z.object({
   receivedAt: z.string(),
 });
 export type WebhookEventResponse = z.infer<typeof WebhookEventResponse>;
+
+// ---------------------------------------------------------------------------
+// Diagnostics — MP payments inspector
+// ---------------------------------------------------------------------------
+
+export const PaymentDiagResponse = z.object({
+  id: z.string(),
+  status: z.string().nullable(),
+  statusDetail: z.string().nullable(),
+  amount: z.number().nullable(),
+  currency: z.string().nullable(),
+  paymentMethodId: z.string().nullable(),
+  dateCreated: z.string().nullable(),
+  externalReference: z.string().nullable(),
+  payerEmail: z.string().nullable(),
+  raw: z.unknown(),
+});
+export type PaymentDiagResponse = z.infer<typeof PaymentDiagResponse>;
+
+export const RecentPaymentsDiagResponse = z.object({
+  payments: z.array(PaymentDiagResponse),
+});
+export type RecentPaymentsDiagResponse = z.infer<typeof RecentPaymentsDiagResponse>;
+
+export const SubscriptionPaymentsDiagResponse = z.object({
+  payments: z.array(PaymentDiagResponse),
+  sources: z.array(z.string()),
+  errors: z.array(z.string()).optional(),
+});
+export type SubscriptionPaymentsDiagResponse = z.infer<
+  typeof SubscriptionPaymentsDiagResponse
+>;
+
+// ---------------------------------------------------------------------------
+// Notes
+// ---------------------------------------------------------------------------
+
+export const CreateNoteRequest = z.object({
+  method: SubscriptionMethod,
+  title: z.string().min(1).max(200),
+  body: z.string().min(1),
+});
+export type CreateNoteRequest = z.infer<typeof CreateNoteRequest>;
+
+export const UpdateNoteRequest = z
+  .object({
+    title: z.string().min(1).max(200).optional(),
+    body: z.string().min(1).optional(),
+  })
+  .refine((d) => d.title !== undefined || d.body !== undefined, {
+    message: "At least one of title or body must be provided",
+  });
+export type UpdateNoteRequest = z.infer<typeof UpdateNoteRequest>;
+
+export const NoteResponse = z.object({
+  id: z.string(),
+  method: SubscriptionMethod,
+  title: z.string(),
+  body: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  deletedAt: z.string().nullable(),
+});
+export type NoteResponse = z.infer<typeof NoteResponse>;

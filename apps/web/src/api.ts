@@ -10,9 +10,14 @@ import type {
   PlanDetailResponse,
   CreatePaymentProfileRequest,
   ChargeOrderRequest,
+  CreateNoteRequest,
+  UpdateNoteRequest,
+  NoteResponse,
+  RecentPaymentsDiagResponse,
+  SubscriptionPaymentsDiagResponse,
 } from "shared";
 
-const API = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+import { API_URL as API } from "./config.js";
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${API}${path}`, {
@@ -44,6 +49,19 @@ async function del<T>(path: string): Promise<T> {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     const errorData = err as { error?: string };
     throw new Error(errorData.error ?? res.statusText);
+  }
+  return res.json() as Promise<T>;
+}
+
+async function patch<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error((err as { error?: string }).error ?? res.statusText);
   }
   return res.json() as Promise<T>;
 }
@@ -273,4 +291,71 @@ export function deleteAllPlans(): Promise<{ ok: boolean; count: number }> {
   return del<{ ok: boolean; count: number }>("/a3/plans");
 }
 
-export { post, get, del };
+// ---------------------------------------------------------------------------
+// Config / environment
+// ---------------------------------------------------------------------------
+
+export type MpEnvironment = "test" | "production" | "unknown";
+
+export interface MpConfigInfo {
+  accessToken: {
+    present: boolean;
+    environment: MpEnvironment;
+    masked: string;
+  };
+  notificationUrl: string | null;
+  backUrl: string | null;
+}
+
+/** Non-secret view of the MP credentials the API is running with. */
+export function getMpConfig(): Promise<MpConfigInfo> {
+  return get<MpConfigInfo>("/config/mp");
+}
+
+// ---------------------------------------------------------------------------
+// Notes
+// ---------------------------------------------------------------------------
+
+export function listNotes(method: SubscriptionMethod): Promise<NoteResponse[]> {
+  return get<NoteResponse[]>(`/notes?method=${encodeURIComponent(method)}`);
+}
+
+export function createNote(body: CreateNoteRequest): Promise<NoteResponse> {
+  return post<NoteResponse>("/notes", body);
+}
+
+export function updateNote(id: string, body: UpdateNoteRequest): Promise<NoteResponse> {
+  return patch<NoteResponse>(`/notes/${encodeURIComponent(id)}`, body);
+}
+
+export function deleteNote(id: string): Promise<void> {
+  // DELETE /notes returns 204 with no body. The existing del<T>() helper calls
+  // res.json(), which would throw on an empty body. Use a dedicated no-body fetch.
+  return fetch(`${API}/notes/${encodeURIComponent(id)}`, { method: "DELETE" }).then((res) => {
+    if (!res.ok) throw new Error(res.statusText);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostics — MP payments inspector
+// ---------------------------------------------------------------------------
+
+/** Recent payments from MP (global, not subscription-specific). */
+export function getRecentPayments(
+  limit = 10,
+): Promise<RecentPaymentsDiagResponse> {
+  return get<RecentPaymentsDiagResponse>(
+    `/diag/payments?limit=${encodeURIComponent(limit)}`,
+  );
+}
+
+/** All MP payments tied to a local subscription (merged from multiple sources). */
+export function getSubscriptionPayments(
+  id: string,
+): Promise<SubscriptionPaymentsDiagResponse> {
+  return get<SubscriptionPaymentsDiagResponse>(
+    `/diag/subscriptions/${encodeURIComponent(id)}/payments`,
+  );
+}
+
+export { post, get, del, patch };

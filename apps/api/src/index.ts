@@ -9,7 +9,10 @@ import { a1Router } from "./routes/a1.js";
 import { a2Router } from "./routes/a2.js";
 import { a3Router } from "./routes/a3.js";
 import { bRouter } from "./routes/b.js";
+import { notesRouter } from "./routes/notes.js";
+import { diagRouter } from "./routes/diag.js";
 import { validateEnv, env } from "./config.js";
+import { getMpConfigInfo } from "./mp.js";
 
 // Validate environment variables after loading .env
 validateEnv();
@@ -32,11 +35,19 @@ app.get("/health", (_req: Request, res: Response) => {
   });
 });
 
+// Non-secret view of the MP credentials the API is running with (environment +
+// masked token) so the UI can surface test/production mismatches.
+app.get("/config/mp", (_req: Request, res: Response) => {
+  res.json(getMpConfigInfo());
+});
+
 app.use("/webhooks", webhooksRouter);
 app.use("/a1", a1Router);
 app.use("/a2", a2Router);
 app.use("/a3", a3Router);
 app.use("/b", bRouter);
+app.use("/notes", notesRouter);
+app.use("/diag", diagRouter);
 
 // Global error handler — must have 4 params so Express recognises it as error middleware
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction): void => {

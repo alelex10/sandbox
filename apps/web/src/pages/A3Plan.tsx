@@ -7,6 +7,8 @@ import { StatusBadge } from "../components/StatusBadge.js";
 import { AdvancedSection } from "../components/AdvancedSection.js";
 import { CardFormMpJs } from "../components/CardFormMpJs.js";
 import { CardBrick } from "../components/CardBrick.js";
+import { SubViewToggle } from "../components/SubViewToggle.js";
+import { NotesView } from "../components/NotesView.js";
 import {
   createPlan,
   listA3Plans,
@@ -32,8 +34,9 @@ import type {
   Tokenization,
 } from "shared";
 import { MP_PUBLIC_KEY as PUBLIC_KEY } from "../config.js";
+import { PaymentsDiag } from "../components/PaymentsDiag.js";
 
-type SubView = "planes" | "suscripciones";
+type SubView = "planes" | "suscripciones" | "notas";
 type TokenizationMode = "mercadopagojs" | "brick";
 type SubscribePath = "redirect" | "api";
 
@@ -54,48 +57,6 @@ interface PlanFormState {
   repetitions: string;
   paymentTypesAllowed: string[];
   paymentMethodsAllowed: string[];
-}
-
-// ---------------------------------------------------------------------------
-// Sub-view toggle (segmented control)
-// ---------------------------------------------------------------------------
-
-function SubViewToggle({
-  value,
-  onChange,
-}: {
-  value: SubView;
-  onChange: (v: SubView) => void;
-}) {
-  const opts: { key: SubView; label: string }[] = [
-    { key: "planes", label: "Planes" },
-    { key: "suscripciones", label: "Suscripciones" },
-  ];
-
-  return (
-    <div
-      role="tablist"
-      className="inline-flex rounded-lg border border-gray-300 bg-gray-100 p-0.5 gap-0.5"
-    >
-      {opts.map((o) => (
-        <button
-          key={o.key}
-          role="tab"
-          type="button"
-          aria-selected={value === o.key}
-          onClick={() => onChange(o.key)}
-          className={[
-            "px-5 py-1.5 rounded-md text-sm font-medium transition-colors",
-            value === o.key
-              ? "bg-white text-gray-900 shadow-sm"
-              : "text-gray-500 hover:text-gray-700",
-          ].join(" ")}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1495,6 +1456,9 @@ function SuscripcionesView({
           )}
         </Card>
 
+        {/* Payments diagnostic card — only shown when a subscription is selected */}
+        {selectedId && <PaymentsDiag subscriptionId={selectedId} />}
+
         {/* Webhooks card */}
         <Card title="Webhook Events (live feed)">
           <p className="text-xs text-gray-500 mb-3">
@@ -1552,17 +1516,27 @@ export function A3Plan() {
 
       {/* Sub-view toggle */}
       <div className="mb-6">
-        <SubViewToggle value={subView} onChange={setSubView} />
+        <SubViewToggle
+          value={subView}
+          onChange={setSubView}
+          opts={[
+            { key: "planes", label: "Planes" },
+            { key: "suscripciones", label: "Suscripciones" },
+            { key: "notas", label: "Notas" },
+          ]}
+        />
       </div>
 
       {subView === "planes" ? (
         <PlanesView plans={plans} onPlansRefresh={fetchPlans} />
-      ) : (
+      ) : subView === "suscripciones" ? (
         <SuscripcionesView
           plans={plans}
           subscriptions={subscriptions}
           onSubscriptionsRefresh={fetchSubscriptions}
         />
+      ) : (
+        <NotesView method="a3_plan" />
       )}
     </div>
   );
