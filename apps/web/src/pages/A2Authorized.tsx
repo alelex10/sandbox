@@ -68,6 +68,7 @@ export function A2Authorized() {
   const [searching, setSearching] = useState(false);
   const [searchMpId, setSearchMpId] = useState("");
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [deletingAll, setDeletingAll] = useState(false);
 
   const fetchHistory = useCallback(async () => {
     try {
@@ -209,8 +210,10 @@ export function A2Authorized() {
                 {history.length > 0 && (
                   <button
                     type="button"
+                    disabled={deletingAll}
                     onClick={async () => {
                       if (!window.confirm("¿Eliminar TODO el historial de esta sección? (borrado lógico, los datos se conservan)")) return;
+                      setDeletingAll(true);
                       try {
                         await deleteAllA2();
                         await fetchHistory();
@@ -219,9 +222,11 @@ export function A2Authorized() {
                         setSearchResult(null);
                       } catch (err) {
                         window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
+                      } finally {
+                        setDeletingAll(false);
                       }
                     }}
-                    className="text-xs text-red-400 hover:text-red-600 transition-colors"
+                    className="text-xs text-red-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     Eliminar todo
                   </button>

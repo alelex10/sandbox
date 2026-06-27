@@ -344,6 +344,7 @@ export function BOrders() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SubscriptionDetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
 
   const fetchSubscriptions = useCallback(async () => {
     try {
@@ -429,8 +430,10 @@ export function BOrders() {
                 {subscriptions.length > 0 && (
                   <button
                     type="button"
+                    disabled={deletingAll}
                     onClick={async () => {
                       if (!window.confirm("¿Eliminar TODO el historial de esta sección? (borrado lógico, los datos se conservan)")) return;
+                      setDeletingAll(true);
                       try {
                         await deleteAllB();
                         await fetchSubscriptions();
@@ -438,9 +441,11 @@ export function BOrders() {
                         setDetail(null);
                       } catch (err) {
                         window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
+                      } finally {
+                        setDeletingAll(false);
                       }
                     }}
-                    className="text-xs text-red-400 hover:text-red-600 transition-colors"
+                    className="text-xs text-red-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     Eliminar todo
                   </button>

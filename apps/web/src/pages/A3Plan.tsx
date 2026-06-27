@@ -154,6 +154,7 @@ function PlanesView({
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [planDetail, setPlanDetail] = useState<PlanDetailResponse | null>(null);
   const [planDetailLoading, setPlanDetailLoading] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
 
   // Create plan form
   const [planForm, setPlanForm] = useState<PlanFormState>({
@@ -196,6 +197,9 @@ function PlanesView({
       if (selectedPlanId === id) {
         setSelectedPlanId(null);
         setPlanDetail(null);
+        setMpSearchResult(null);
+        setMpSearchError(null);
+        setPlanResult(null);
       }
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
@@ -271,18 +275,25 @@ function PlanesView({
               {plans.length > 0 && (
                 <button
                   type="button"
+                  disabled={deletingAll}
                   onClick={async () => {
                     if (!window.confirm("¿Eliminar TODO el historial de esta sección? (borrado lógico, los datos se conservan)")) return;
+                    setDeletingAll(true);
                     try {
                       await deleteAllPlans();
                       await onPlansRefresh();
                       setSelectedPlanId(null);
                       setPlanDetail(null);
+                      setMpSearchResult(null);
+                      setMpSearchError(null);
+                      setPlanResult(null);
                     } catch (err) {
                       window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
+                    } finally {
+                      setDeletingAll(false);
                     }
                   }}
-                  className="text-xs text-red-400 hover:text-red-600 transition-colors"
+                  className="text-xs text-red-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   Eliminar todo
                 </button>
@@ -610,6 +621,7 @@ function SuscripcionesView({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SubscriptionDetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
 
   // Subscribe form
   const [selectedPlanMpId, setSelectedPlanMpId] = useState("");
@@ -747,8 +759,10 @@ function SuscripcionesView({
               {subscriptions.length > 0 && (
                 <button
                   type="button"
+                  disabled={deletingAll}
                   onClick={async () => {
                     if (!window.confirm("¿Eliminar TODO el historial de esta sección? (borrado lógico, los datos se conservan)")) return;
+                    setDeletingAll(true);
                     try {
                       await deleteAllA3();
                       await onSubscriptionsRefresh();
@@ -757,9 +771,11 @@ function SuscripcionesView({
                       setSearchResult(null);
                     } catch (err) {
                       window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
+                    } finally {
+                      setDeletingAll(false);
                     }
                   }}
-                  className="text-xs text-red-400 hover:text-red-600 transition-colors"
+                  className="text-xs text-red-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   Eliminar todo
                 </button>
