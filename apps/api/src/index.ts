@@ -4,7 +4,7 @@ import "./load-env.js";
 import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
 import { ZodError } from "zod";
-import { webhooksRouter } from "./routes/webhooks.js";
+import { webhooksRouter, mpWebhookHandler } from "./routes/webhooks.js";
 import { a1Router } from "./routes/a1.js";
 import { a2Router } from "./routes/a2.js";
 import { a3Router } from "./routes/a3.js";
@@ -13,6 +13,7 @@ import { notesRouter } from "./routes/notes.js";
 import { diagRouter } from "./routes/diag.js";
 import { validateEnv, env } from "./config.js";
 import { getMpConfigInfo } from "./mp.js";
+import { normalizeError } from "./errors.js";
 
 // Validate environment variables after loading .env
 validateEnv();
@@ -42,6 +43,7 @@ app.get("/config/mp", (_req: Request, res: Response) => {
 });
 
 app.use("/webhooks", webhooksRouter);
+app.post("/payments/mercado-pago/notification", mpWebhookHandler);
 app.use("/a1", a1Router);
 app.use("/a2", a2Router);
 app.use("/a3", a3Router);
@@ -50,14 +52,25 @@ app.use("/notes", notesRouter);
 app.use("/diag", diagRouter);
 
 // Global error handler — must have 4 params so Express recognises it as error middleware
-app.use((err: unknown, _req: Request, res: Response, _next: NextFunction): void => {
+app.use((err: unknown, req: Request, res: Response, _next: NextFunction): void => {
   if (err instanceof ZodError) {
-    res.status(400).json({ errors: err.issues });
+    res
+      .status(400)
+      .json({ error: "Validation failed", detail: err.issues, status: 400 });
     return;
   }
 
-  console.error(err);
-  res.status(500).json({ error: "Internal server error" });
+  // Surface the REAL error (message + MP detail) instead of a generic 500.
+  const norm = normalizeError(err);
+  console.error(
+    `[error] ${req.method} ${req.path} → ${norm.status} ${norm.message}`,
+    norm.detail ?? "",
+  );
+  res.status(norm.status).json({
+    error: norm.message,
+    detail: norm.detail ?? null,
+    status: norm.status,
+  });
 });
 
 app.listen(env.API_PORT, () =>
