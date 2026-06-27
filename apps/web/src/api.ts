@@ -16,6 +16,7 @@ import type {
   RecentPaymentsDiagResponse,
   SubscriptionPaymentsDiagResponse,
   TunnelCheckResponse,
+  ApiErrorLogResponse,
 } from "shared";
 
 import { API_URL as API } from "./config.js";
@@ -371,6 +372,47 @@ export function getSubscriptionPayments(
  *  and verifies the response is our /webhooks/health JSON marker. */
 export function checkTunnel(): Promise<TunnelCheckResponse> {
   return get<TunnelCheckResponse>("/diag/tunnel-check");
+}
+
+// ---------------------------------------------------------------------------
+// Error Log
+// ---------------------------------------------------------------------------
+
+export type { ApiErrorLogResponse };
+
+export function listErrors(
+  params: { limit?: number; status?: number; path?: string } = {},
+): Promise<ApiErrorLogResponse[]> {
+  const qs = new URLSearchParams();
+  if (params.limit !== undefined) qs.set("limit", String(params.limit));
+  if (params.status !== undefined) qs.set("status", String(params.status));
+  if (params.path) qs.set("path", params.path);
+  const s = qs.toString();
+  return get<ApiErrorLogResponse[]>(`/errors${s ? `?${s}` : ""}`);
+}
+
+export function clearErrors(): Promise<{ ok: boolean; count: number }> {
+  return del<{ ok: boolean; count: number }>("/errors");
+}
+
+// ---------------------------------------------------------------------------
+// Actions — real MP mutations (cancel preapproval, refund payment)
+// ---------------------------------------------------------------------------
+
+export function cancelSubscription(
+  id: string,
+): Promise<{ ok: boolean; status: string; id: string }> {
+  return post<{ ok: boolean; status: string; id: string }>(
+    `/actions/subscriptions/${encodeURIComponent(id)}/cancel`,
+    {},
+  );
+}
+
+export function refundPayment(paymentId: string): Promise<unknown> {
+  return post<unknown>(
+    `/actions/payments/${encodeURIComponent(paymentId)}/refund`,
+    {},
+  );
 }
 
 export { post, get, del, patch };

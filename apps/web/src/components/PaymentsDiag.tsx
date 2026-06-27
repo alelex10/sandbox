@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { PaymentDiagResponse } from "shared";
 import { Card } from "./Card.js";
 import { JsonViewer } from "./JsonViewer.js";
-import { getSubscriptionPayments, getRecentPayments } from "../api.js";
+import { getSubscriptionPayments, getRecentPayments, refundPayment } from "../api.js";
 
 // ---------------------------------------------------------------------------
 // Status badge for payment status (approved / rejected / pending / other)
@@ -29,8 +29,15 @@ function PaymentStatusBadge({ status }: { status: string | null }) {
 // Single payment row (expandable to raw JSON)
 // ---------------------------------------------------------------------------
 
-function PaymentRow({ payment }: { payment: PaymentDiagResponse }) {
+function PaymentRow({
+  payment,
+  onRefund,
+}: {
+  payment: PaymentDiagResponse;
+  onRefund: () => Promise<void>;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const [refunding, setRefunding] = useState(false);
 
   const date = payment.dateCreated
     ? new Date(payment.dateCreated).toLocaleString()
@@ -42,6 +49,24 @@ function PaymentRow({ payment }: { payment: PaymentDiagResponse }) {
           minimumFractionDigits: 2,
         })}`
       : "—";
+
+  async function handleRefund(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!payment.id) return;
+    const confirmed = window.confirm(
+      "¿Reembolsar este pago? Devuelve plata REAL al pagador.",
+    );
+    if (!confirmed) return;
+    setRefunding(true);
+    try {
+      await refundPayment(String(payment.id));
+      await onRefund();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "No se pudo reembolsar");
+    } finally {
+      setRefunding(false);
+    }
+  }
 
   return (
     <>
@@ -65,8 +90,19 @@ function PaymentRow({ payment }: { payment: PaymentDiagResponse }) {
         <td className="px-3 py-2 text-xs text-gray-400 font-mono max-w-[10rem] truncate">
           {payment.externalReference ?? "—"}
         </td>
-        <td className="px-3 py-2 text-xs text-gray-400 text-right">
-          {expanded ? "▲" : "▼"}
+        <td className="px-3 py-2 text-xs text-right whitespace-nowrap">
+          {payment.status === "approved" && (
+            <button
+              type="button"
+              onClick={(e) => void handleRefund(e)}
+              disabled={refunding}
+              className="mr-2 text-xs font-medium text-amber-700 border border-amber-300 rounded px-2 py-0.5 hover:bg-amber-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Reembolsar este pago (devuelve plata real)"
+            >
+              {refunding ? "Reembolsando…" : "Reembolsar"}
+            </button>
+          )}
+          <span className="text-gray-400">{expanded ? "▲" : "▼"}</span>
         </td>
       </tr>
       {expanded && (
@@ -84,7 +120,13 @@ function PaymentRow({ payment }: { payment: PaymentDiagResponse }) {
 // Payments table
 // ---------------------------------------------------------------------------
 
-function PaymentsTable({ payments }: { payments: PaymentDiagResponse[] }) {
+function PaymentsTable({
+  payments,
+  onRefund,
+}: {
+  payments: PaymentDiagResponse[];
+  onRefund: () => Promise<void>;
+}) {
   if (payments.length === 0) {
     return (
       <p className="text-sm text-gray-400 italic py-2">Sin pagos todavía.</p>
@@ -106,7 +148,7 @@ function PaymentsTable({ payments }: { payments: PaymentDiagResponse[] }) {
         </thead>
         <tbody className="divide-y divide-gray-100">
           {payments.map((p) => (
-            <PaymentRow key={p.id} payment={p} />
+            <PaymentRow key={p.id} payment={p} onRefund={onRefund} />
           ))}
         </tbody>
       </table>
@@ -169,7 +211,9 @@ export function PaymentsDiag({ subscriptionId }: PaymentsDiagProps) {
           </p>
         )}
 
-        {payments !== null && <PaymentsTable payments={payments} />}
+        {payments !== null && (
+          <PaymentsTable payments={payments} onRefund={handleConsult} />
+        )}
 
         {sources.length > 0 && (
           <details className="text-xs text-gray-400 mt-1">
@@ -260,7 +304,9 @@ export function RecentPaymentsPanel({ defaultOpen = false }: RecentPaymentsPanel
           </p>
         )}
 
-        {open && payments !== null && <PaymentsTable payments={payments} />}
+        {open && payments !== null && (
+          <PaymentsTable payments={payments} onRefund={handleFetch} />
+        )}
       </div>
     </Card>
   );

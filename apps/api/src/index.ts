@@ -11,9 +11,12 @@ import { a3Router } from "./routes/a3.js";
 import { bRouter } from "./routes/b.js";
 import { notesRouter } from "./routes/notes.js";
 import { diagRouter } from "./routes/diag.js";
+import { errorsRouter } from "./routes/errors.js";
+import { actionsRouter } from "./routes/actions.js";
 import { validateEnv, env } from "./config.js";
 import { getMpConfigInfo } from "./mp.js";
-import { normalizeError } from "./errors.js";
+import { normalizeError, logApiError } from "./errors.js";
+import { db } from "./db.js";
 
 // Validate environment variables after loading .env
 validateEnv();
@@ -50,10 +53,20 @@ app.use("/a3", a3Router);
 app.use("/b", bRouter);
 app.use("/notes", notesRouter);
 app.use("/diag", diagRouter);
+app.use("/errors", errorsRouter);
+app.use("/actions", actionsRouter);
 
 // Global error handler — must have 4 params so Express recognises it as error middleware
 app.use((err: unknown, req: Request, res: Response, _next: NextFunction): void => {
   if (err instanceof ZodError) {
+    // Fire-and-forget: persist the validation error; must not block or alter the response.
+    void logApiError(db, {
+      method: req.method,
+      path: req.path,
+      status: 400,
+      message: err.message,
+      detail: err.issues,
+    }).catch(() => {});
     res
       .status(400)
       .json({ error: "Validation failed", detail: err.issues, status: 400 });
@@ -66,6 +79,14 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction): void =
     `[error] ${req.method} ${req.path} → ${norm.status} ${norm.message}`,
     norm.detail ?? "",
   );
+  // Fire-and-forget: persist the error; must not block or alter the response.
+  void logApiError(db, {
+    method: req.method,
+    path: req.path,
+    status: norm.status,
+    message: norm.message,
+    detail: norm.detail,
+  }).catch(() => {});
   res.status(norm.status).json({
     error: norm.message,
     detail: norm.detail ?? null,

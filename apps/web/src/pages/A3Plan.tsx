@@ -22,6 +22,7 @@ import {
   deleteA3,
   deleteAllPlans,
   deleteAllA3,
+  cancelSubscription,
 } from "../api.js";
 import type {
   PlanResponse,
@@ -746,6 +747,7 @@ function SuscripcionesView({
   const [detail, setDetail] = useState<SubscriptionDetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   // Subscribe form
   const [selectedPlanMpId, setSelectedPlanMpId] = useState("");
@@ -907,6 +909,24 @@ function SuscripcionesView({
       setSearchError(err instanceof Error ? err.message : "Search failed");
     } finally {
       setSearching(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!selectedId) return;
+    const confirmed = window.confirm(
+      "¿Cancelar esta suscripción en MercadoPago? Es IRREVERSIBLE y deja de cobrar.",
+    );
+    if (!confirmed) return;
+    setCancelling(true);
+    try {
+      await cancelSubscription(selectedId);
+      await onSubscriptionsRefresh();
+      void fetchDetail(selectedId);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "No se pudo cancelar");
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -1422,13 +1442,24 @@ function SuscripcionesView({
               <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
                 <span className="text-xs text-gray-500 font-mono">{selectedSub.id}</span>
                 <StatusBadge status={selectedSub.status} />
+                {selectedSub.status !== "cancelled" && (
+                  <button
+                    type="button"
+                    onClick={() => void handleCancel()}
+                    disabled={cancelling || detailLoading}
+                    className="ml-auto text-xs font-medium text-red-600 border border-red-300 rounded px-2 py-0.5 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    title="Cancelar en MercadoPago (irreversible)"
+                  >
+                    {cancelling ? "Cancelando…" : "Cancelar en MP"}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
                     if (selectedId) void fetchDetail(selectedId);
                   }}
                   disabled={detailLoading}
-                  className="ml-auto text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                  className={`${selectedSub.status !== "cancelled" ? "" : "ml-auto "}text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50`}
                   title="Refetch timeline"
                 >
                   {detailLoading ? "..." : "↻ Actualizar"}
