@@ -881,7 +881,8 @@ function SuscripcionesView({
       if (subBackUrl) payload.backUrl = subBackUrl;
       if (subReason) payload.reason = subReason;
       // Build auto_recurring override — only include fields the user filled; omit empties.
-      {
+      // Only applies on the API path; redirect path does not send autoRecurring.
+      if (subscribePath === "api") {
         type AROverride = NonNullable<typeof payload.autoRecurring>;
         const ar: AROverride = {};
         if (orAmount) ar.amount = Number(orAmount);
@@ -897,7 +898,7 @@ function SuscripcionesView({
           ar.freeTrial = {
             frequency: Number(orFtFrequency),
             frequencyType: orFtFrequencyType === "days" ? "days" : "months",
-            ...(orFtFirstInvoiceOffset
+            ...(orFtFirstInvoiceOffset !== ""
               ? { firstInvoiceOffset: Number(orFtFirstInvoiceOffset) }
               : {}),
           };
