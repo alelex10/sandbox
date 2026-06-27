@@ -987,6 +987,76 @@ function SuscripcionesView({
       <div className="space-y-4 min-w-0">
         {/* Subscribe card */}
         <Card title="Suscribir pagador">
+          {/* Tokenization — rendered OUTSIDE the subscribe form to avoid nested <form> elements */}
+          {subscribePath === "api" && (
+            <div className="mb-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">Tokenization method</p>
+              <div className="flex gap-2 mb-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTokenizationMode("mercadopagojs");
+                    setCardTokenId(null);
+                    setTokenSource(null);
+                  }}
+                  className={[
+                    "px-4 py-2 rounded text-sm font-medium border transition-colors",
+                    tokenizationMode === "mercadopagojs"
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white text-gray-700 border-gray-300 hover:border-gray-400",
+                  ].join(" ")}
+                >
+                  MP.js v2 (custom form)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTokenizationMode("brick");
+                    setCardTokenId(null);
+                    setTokenSource(null);
+                  }}
+                  className={[
+                    "px-4 py-2 rounded text-sm font-medium border transition-colors",
+                    tokenizationMode === "brick"
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white text-gray-700 border-gray-300 hover:border-gray-400",
+                  ].join(" ")}
+                >
+                  Card Payment Brick
+                </button>
+              </div>
+              <div className="border border-gray-200 rounded p-4 bg-gray-50">
+                {tokenizationMode === "mercadopagojs" ? (
+                  <CardFormMpJs
+                    publicKey={PUBLIC_KEY}
+                    onToken={(id) => {
+                      setCardTokenId(id);
+                      setTokenSource(tokenizationMode);
+                      setSubError(null);
+                    }}
+                  />
+                ) : (
+                  <CardBrick
+                    key={`brick-${tokenizationMode}`}
+                    publicKey={PUBLIC_KEY}
+                    onToken={(id) => {
+                      setCardTokenId(id);
+                      setTokenSource(tokenizationMode);
+                      setSubError(null);
+                    }}
+                  />
+                )}
+              </div>
+              {cardTokenId && (
+                <p className="mt-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
+                  Card token ready (via{" "}
+                  <span className="font-mono">{tokenSource}</span>). Submit to create the
+                  subscription.
+                </p>
+              )}
+            </div>
+          )}
+
           <form onSubmit={handleSubscribe} className="space-y-4">
             <PlanPicker plans={plans} selectedId={selectedPlanMpId} onSelect={setSelectedPlanMpId} />
 
@@ -1067,76 +1137,6 @@ function SuscripcionesView({
                 </button>
               </div>
             </div>
-
-            {/* Tokenization — only for API path */}
-            {subscribePath === "api" && (
-              <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">Tokenization method</p>
-                <div className="flex gap-2 mb-4">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTokenizationMode("mercadopagojs");
-                      setCardTokenId(null);
-                      setTokenSource(null);
-                    }}
-                    className={[
-                      "px-4 py-2 rounded text-sm font-medium border transition-colors",
-                      tokenizationMode === "mercadopagojs"
-                        ? "bg-blue-600 text-white border-blue-600"
-                        : "bg-white text-gray-700 border-gray-300 hover:border-gray-400",
-                    ].join(" ")}
-                  >
-                    MP.js v2 (custom form)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTokenizationMode("brick");
-                      setCardTokenId(null);
-                      setTokenSource(null);
-                    }}
-                    className={[
-                      "px-4 py-2 rounded text-sm font-medium border transition-colors",
-                      tokenizationMode === "brick"
-                        ? "bg-blue-600 text-white border-blue-600"
-                        : "bg-white text-gray-700 border-gray-300 hover:border-gray-400",
-                    ].join(" ")}
-                  >
-                    Card Payment Brick
-                  </button>
-                </div>
-                <div className="border border-gray-200 rounded p-4 bg-gray-50">
-                  {tokenizationMode === "mercadopagojs" ? (
-                    <CardFormMpJs
-                      publicKey={PUBLIC_KEY}
-                      onToken={(id) => {
-                        setCardTokenId(id);
-                        setTokenSource(tokenizationMode);
-                        setSubError(null);
-                      }}
-                    />
-                  ) : (
-                    <CardBrick
-                      key={`brick-${tokenizationMode}`}
-                      publicKey={PUBLIC_KEY}
-                      onToken={(id) => {
-                        setCardTokenId(id);
-                        setTokenSource(tokenizationMode);
-                        setSubError(null);
-                      }}
-                    />
-                  )}
-                </div>
-                {cardTokenId && (
-                  <p className="mt-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
-                    Card token ready (via{" "}
-                    <span className="font-mono">{tokenSource}</span>). Submit to create the
-                    subscription.
-                  </p>
-                )}
-              </div>
-            )}
 
             {subscribePath === "api" ? (
               <AdvancedSection>
