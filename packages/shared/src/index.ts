@@ -78,9 +78,28 @@ export const SubscribeToPlanRequest = z.object({
   cardTokenId: z.string().min(1).optional(),
   tokenization: Tokenization.optional(),
   backUrl: z.string().url().optional(),
-  startDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
   reason: z.string().min(1).optional(),
+  // Optional full auto_recurring override — an empirical probe to test whether per-subscription
+  // values override the plan's values in MercadoPago. All fields are optional so any subset
+  // can be sent; MP may honor or silently ignore them.
+  autoRecurring: z
+    .object({
+      frequency: z.number().int().positive().optional(),
+      frequencyType: z.enum(["months", "days"]).optional(),
+      amount: z.number().positive().optional(),
+      currency: z.string().length(3).optional(),
+      startDate: z.string().datetime().optional(),
+      endDate: z.string().datetime().optional(),
+      billingDay: z.number().int().min(1).max(28).optional(),
+      freeTrial: z
+        .object({
+          frequency: z.number().int().positive(),
+          frequencyType: z.enum(["months", "days"]),
+          firstInvoiceOffset: z.number().int().nonnegative().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
 });
 export type SubscribeToPlanRequest = z.infer<typeof SubscribeToPlanRequest>;
 

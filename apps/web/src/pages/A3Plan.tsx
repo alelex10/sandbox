@@ -31,8 +31,7 @@ import type {
   PlanDetailResponse,
   Tokenization,
 } from "shared";
-
-const PUBLIC_KEY = import.meta.env.VITE_MP_PUBLIC_KEY as string;
+import { MP_PUBLIC_KEY as PUBLIC_KEY } from "../config.js";
 
 type SubView = "planes" | "suscripciones";
 type TokenizationMode = "mercadopagojs" | "brick";
@@ -798,11 +797,20 @@ function SuscripcionesView({
   const [subSubmitting, setSubSubmitting] = useState(false);
   const [subError, setSubError] = useState<Error | null>(null);
   const [subResult, setSubResult] = useState<SubscribeResult | null>(null);
-  // Advanced subscribe fields
+  // Advanced subscribe fields — top-level
   const [subBackUrl, setSubBackUrl] = useState("");
-  const [subStartDate, setSubStartDate] = useState("");
-  const [subEndDate, setSubEndDate] = useState("");
   const [subReason, setSubReason] = useState("");
+  // auto_recurring override (empirical probe — any subset; empty fields are omitted)
+  const [orAmount, setOrAmount] = useState("");
+  const [orFrequency, setOrFrequency] = useState("");
+  const [orFrequencyType, setOrFrequencyType] = useState("");
+  const [orCurrency, setOrCurrency] = useState("");
+  const [orStartDate, setOrStartDate] = useState("");
+  const [orEndDate, setOrEndDate] = useState("");
+  const [orBillingDay, setOrBillingDay] = useState("");
+  const [orFtFrequency, setOrFtFrequency] = useState("");
+  const [orFtFrequencyType, setOrFtFrequencyType] = useState("months");
+  const [orFtFirstInvoiceOffset, setOrFtFirstInvoiceOffset] = useState("");
 
   // Search
   const [searchMpId, setSearchMpId] = useState("");
@@ -871,9 +879,31 @@ function SuscripcionesView({
         payload.tokenization = tokenSource;
       }
       if (subBackUrl) payload.backUrl = subBackUrl;
-      if (subStartDate) payload.startDate = new Date(subStartDate).toISOString();
-      if (subEndDate) payload.endDate = new Date(subEndDate).toISOString();
       if (subReason) payload.reason = subReason;
+      // Build auto_recurring override — only include fields the user filled; omit empties.
+      {
+        type AROverride = NonNullable<typeof payload.autoRecurring>;
+        const ar: AROverride = {};
+        if (orAmount) ar.amount = Number(orAmount);
+        if (orFrequency) ar.frequency = Number(orFrequency);
+        if (orFrequencyType === "months" || orFrequencyType === "days") {
+          ar.frequencyType = orFrequencyType;
+        }
+        if (orCurrency && orCurrency.length === 3) ar.currency = orCurrency.toUpperCase();
+        if (orStartDate) ar.startDate = new Date(orStartDate).toISOString();
+        if (orEndDate) ar.endDate = new Date(orEndDate).toISOString();
+        if (orBillingDay) ar.billingDay = Number(orBillingDay);
+        if (orFtFrequency) {
+          ar.freeTrial = {
+            frequency: Number(orFtFrequency),
+            frequencyType: orFtFrequencyType === "days" ? "days" : "months",
+            ...(orFtFirstInvoiceOffset
+              ? { firstInvoiceOffset: Number(orFtFirstInvoiceOffset) }
+              : {}),
+          };
+        }
+        if (Object.keys(ar).length > 0) payload.autoRecurring = ar;
+      }
       const res = await subscribeToPlan(payload);
       setSubResult(res);
       setCardTokenId(null);
@@ -1148,6 +1178,7 @@ function SuscripcionesView({
 
             {subscribePath === "api" ? (
               <AdvancedSection>
+                {/* Top-level fields */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Back URL <span className="text-gray-400 font-normal">(optional)</span>
@@ -1157,28 +1188,6 @@ function SuscripcionesView({
                     value={subBackUrl}
                     onChange={(e) => setSubBackUrl(e.target.value)}
                     placeholder="https://example.com/return"
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Start date <span className="text-gray-400 font-normal">(optional)</span>
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={subStartDate}
-                    onChange={(e) => setSubStartDate(e.target.value)}
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    End date <span className="text-gray-400 font-normal">(optional)</span>
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={subEndDate}
-                    onChange={(e) => setSubEndDate(e.target.value)}
                     className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -1194,10 +1203,166 @@ function SuscripcionesView({
                     className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
+                {/* auto_recurring override probe */}
+                <fieldset className="border border-amber-200 bg-amber-50 rounded p-4 space-y-3">
+                  <legend className="text-xs font-semibold text-amber-700 px-1">
+                    Override del plan (auto_recurring) — para probar si se superpone al plan
+                  </legend>
+                  <p className="text-xs text-amber-600">
+                    Si lo dejás vacío, se usan los valores del plan.
+                  </p>
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Amount
+                      </label>
+                      <input
+                        type="number"
+                        value={orAmount}
+                        onChange={(e) => setOrAmount(e.target.value)}
+                        min="0.01"
+                        step="0.01"
+                        placeholder="e.g. 500"
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Frequency
+                      </label>
+                      <input
+                        type="number"
+                        value={orFrequency}
+                        onChange={(e) => setOrFrequency(e.target.value)}
+                        min="1"
+                        placeholder="e.g. 1"
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Freq. type
+                      </label>
+                      <select
+                        value={orFrequencyType}
+                        onChange={(e) => setOrFrequencyType(e.target.value)}
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      >
+                        <option value="">— (plan default)</option>
+                        <option value="months">months</option>
+                        <option value="days">days</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="w-28">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Currency
+                      </label>
+                      <input
+                        type="text"
+                        value={orCurrency}
+                        onChange={(e) => setOrCurrency(e.target.value)}
+                        maxLength={3}
+                        placeholder="ARS"
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Billing day{" "}
+                        <span className="text-gray-400 font-normal">(1–28)</span>
+                      </label>
+                      <input
+                        type="number"
+                        value={orBillingDay}
+                        onChange={(e) => setOrBillingDay(e.target.value)}
+                        min="1"
+                        max="28"
+                        placeholder="e.g. 5"
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Start date
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={orStartDate}
+                        onChange={(e) => setOrStartDate(e.target.value)}
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        End date
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={orEndDate}
+                        onChange={(e) => setOrEndDate(e.target.value)}
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                  </div>
+                  <fieldset className="border border-gray-200 rounded p-3 space-y-2">
+                    <legend className="text-xs font-medium text-gray-600 px-1">
+                      Free trial override{" "}
+                      <span className="text-gray-400 font-normal">
+                        (fill frequency to enable)
+                      </span>
+                    </legend>
+                    <div className="flex gap-3">
+                      <div className="flex-1">
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Frequency
+                        </label>
+                        <input
+                          type="number"
+                          value={orFtFrequency}
+                          onChange={(e) => setOrFtFrequency(e.target.value)}
+                          min="1"
+                          placeholder="e.g. 1"
+                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Type
+                        </label>
+                        <select
+                          value={orFtFrequencyType}
+                          onChange={(e) => setOrFtFrequencyType(e.target.value)}
+                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        >
+                          <option value="months">months</option>
+                          <option value="days">days</option>
+                        </select>
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          First invoice offset
+                        </label>
+                        <input
+                          type="number"
+                          value={orFtFirstInvoiceOffset}
+                          onChange={(e) => setOrFtFirstInvoiceOffset(e.target.value)}
+                          min="0"
+                          placeholder="e.g. 0"
+                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        />
+                      </div>
+                    </div>
+                  </fieldset>
+                </fieldset>
               </AdvancedSection>
             ) : (
               <p className="text-xs text-gray-400 italic">
-                Advanced overrides (backUrl, startDate, endDate, reason) only apply to the API subscription path.
+                Advanced overrides (backUrl, reason, auto_recurring) only apply to the API subscription path.
               </p>
             )}
             {subError && (

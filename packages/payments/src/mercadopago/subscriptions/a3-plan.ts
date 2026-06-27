@@ -43,8 +43,22 @@ export interface SubscribeToPlanInput {
   cardTokenId?: string;
   backUrl?: string;
   reason?: string;
-  startDate?: string;
-  endDate?: string;
+  // Optional full auto_recurring override — empirical probe: does MP honor per-subscription
+  // values over the plan's values? All fields are optional; include only what the caller fills.
+  autoRecurring?: {
+    frequency?: number;
+    frequencyType?: "months" | "days";
+    amount?: number;
+    currency?: string;
+    startDate?: string;
+    endDate?: string;
+    billingDay?: number;
+    freeTrial?: {
+      frequency: number;
+      frequencyType: "months" | "days";
+      firstInvoiceOffset?: number;
+    };
+  };
 }
 
 /**
@@ -144,9 +158,11 @@ export async function subscribeToPlan(
   // When subscribing to a plan via API (card_token_id path), MP requires status: "authorized".
   // Without it, the subscription is created in "pending" and never activates.
   //
-  // The auto_recurring override only carries start_date / end_date — frequency and currency
-  // are inherited from the plan by MP. The SDK type requires those fields so we cast to any
-  // to avoid a spurious compile error while keeping the runtime body correct.
+  // The auto_recurring block is a deliberate override probe: the caller can supply any subset
+  // of fields (frequency, amount, currency, dates, billingDay, freeTrial) to empirically test
+  // whether MP honors per-subscription auto_recurring values over the plan's own values.
+  // We cast to any because a partial auto_recurring does not satisfy the SDK's stricter type —
+  // that's intentional here, since we want to send exactly what the experiment requires.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const body: any = {
     preapproval_plan_id: input.preapprovalPlanId,
@@ -156,15 +172,34 @@ export async function subscribeToPlan(
     ...(input.cardTokenId ? { status: "authorized" } : {}),
     ...(input.backUrl ? { back_url: input.backUrl } : {}),
     ...(input.reason ? { reason: input.reason } : {}),
-    ...(input.startDate !== undefined || input.endDate !== undefined
-      ? {
-          auto_recurring: {
-            ...(input.startDate !== undefined ? { start_date: input.startDate } : {}),
-            ...(input.endDate !== undefined ? { end_date: input.endDate } : {}),
-          },
-        }
-      : {}),
   };
+
+  // Build auto_recurring from the override object — only include the block when at least
+  // one field is provided; omit entirely when the override is absent or empty.
+  if (input.autoRecurring) {
+    const ar = input.autoRecurring;
+    const arBlock: Record<string, unknown> = {};
+    if (ar.frequency !== undefined) arBlock.frequency = ar.frequency;
+    if (ar.frequencyType !== undefined) arBlock.frequency_type = ar.frequencyType;
+    if (ar.amount !== undefined) arBlock.transaction_amount = ar.amount;
+    if (ar.currency !== undefined) arBlock.currency_id = ar.currency;
+    if (ar.startDate !== undefined) arBlock.start_date = ar.startDate;
+    if (ar.endDate !== undefined) arBlock.end_date = ar.endDate;
+    if (ar.billingDay !== undefined) arBlock.billing_day = ar.billingDay;
+    if (ar.freeTrial !== undefined) {
+      const ft: Record<string, unknown> = {
+        frequency: ar.freeTrial.frequency,
+        frequency_type: ar.freeTrial.frequencyType,
+      };
+      if (ar.freeTrial.firstInvoiceOffset !== undefined) {
+        ft.first_invoice_offset = ar.freeTrial.firstInvoiceOffset;
+      }
+      arBlock.free_trial = ft;
+    }
+    if (Object.keys(arBlock).length > 0) {
+      body.auto_recurring = arBlock;
+    }
+  }
 
   return preApproval.create({
     body,

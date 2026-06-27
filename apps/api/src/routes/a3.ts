@@ -349,8 +349,7 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
         cardTokenId: body.cardTokenId,
         backUrl: body.backUrl ?? getMpBackUrl(),
         ...(body.reason !== undefined ? { reason: body.reason } : {}),
-        ...(body.startDate !== undefined ? { startDate: body.startDate } : {}),
-        ...(body.endDate !== undefined ? { endDate: body.endDate } : {}),
+        ...(body.autoRecurring !== undefined ? { autoRecurring: body.autoRecurring } : {}),
       });
 
       const rawCreate = JSON.stringify(result);
