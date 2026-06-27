@@ -50,6 +50,7 @@ export const CreatePlanRequest = z.object({
   reason: z.string().min(1),
   autoRecurring: AutoRecurring,
   billingDay: z.number().int().min(1).max(28).optional(),
+  billingDayProportional: z.boolean().optional(),
 });
 export type CreatePlanRequest = z.infer<typeof CreatePlanRequest>;
 

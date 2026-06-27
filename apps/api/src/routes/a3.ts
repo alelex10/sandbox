@@ -180,6 +180,9 @@ a3Router.post("/plans", async (req: Request, res: Response, next: NextFunction) 
         ...(body.billingDay !== undefined
           ? { billingDay: body.billingDay }
           : {}),
+        ...(body.billingDayProportional !== undefined
+          ? { billingDayProportional: body.billingDayProportional }
+          : {}),
       },
     });
 

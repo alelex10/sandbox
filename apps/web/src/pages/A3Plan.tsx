@@ -40,6 +40,7 @@ interface PlanFormState {
   amount: string;
   currency: string;
   billingDay: string;
+  billingDayProportional: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +159,7 @@ function PlanesView({
     amount: "",
     currency: "ARS",
     billingDay: "",
+    billingDayProportional: false,
   });
   const [planSubmitting, setPlanSubmitting] = useState(false);
   const [planError, setPlanError] = useState<Error | null>(null);
@@ -203,6 +205,7 @@ function PlanesView({
         },
       };
       if (planForm.billingDay) payload.billingDay = Number(planForm.billingDay);
+      if (planForm.billingDayProportional) payload.billingDayProportional = true;
       const created = await createPlan(payload);
       setPlanResult(created);
       onPlansRefresh();
@@ -382,6 +385,27 @@ function PlanesView({
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+              <label className="flex items-start gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={planForm.billingDayProportional}
+                  onChange={(e) =>
+                    setPlanForm((prev) => ({
+                      ...prev,
+                      billingDayProportional: e.target.checked,
+                    }))
+                  }
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span>
+                  Cobro proporcional{" "}
+                  <span className="text-gray-400 font-normal">
+                    (billing_day_proportional — cobra proporcional el período
+                    parcial hasta el billing day; solo aplica a planes mensuales
+                    con billing day)
+                  </span>
+                </span>
+              </label>
             </fieldset>
             {planError && (
               <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
