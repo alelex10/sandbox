@@ -19,6 +19,7 @@ bRouter.post("/profiles", async (req: Request, res: Response, next: NextFunction
         cardToken: body.cardTokenId,
         paymentMethodId: body.paymentMethodId,
         cardType: body.cardType,
+        ...(body.statementDescriptor ? { statementDescriptor: body.statementDescriptor } : {}),
       });
     } catch (mpErr) {
       const detail = mpErr instanceof Error ? mpErr.message : "Unknown MP error";

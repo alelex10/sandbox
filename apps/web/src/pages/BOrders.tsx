@@ -4,6 +4,7 @@ import { WebhookList } from "../components/WebhookList.js";
 import { TimelineView } from "../components/TimelineView.js";
 import { Card } from "../components/Card.js";
 import { StatusBadge } from "../components/StatusBadge.js";
+import { AdvancedSection } from "../components/AdvancedSection.js";
 import { CardFormMpJs } from "../components/CardFormMpJs.js";
 import { CardBrick } from "../components/CardBrick.js";
 import {
@@ -39,6 +40,7 @@ function RegisterProfileSection({
   const [tokenSource, setTokenSource] = useState<Tokenization | null>(null);
   const [paymentMethodId, setPaymentMethodId] = useState("visa");
   const [cardType, setCardType] = useState<"credit_card" | "debit_card">("credit_card");
+  const [statementDescriptor, setStatementDescriptor] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CreateProfileResponse | null>(null);
@@ -63,6 +65,7 @@ function RegisterProfileSection({
         tokenization: tokenSource,
         paymentMethodId,
         cardType,
+        ...(statementDescriptor ? { statementDescriptor } : {}),
       });
       setResult(created);
       setCardTokenId(null);
@@ -156,6 +159,21 @@ function RegisterProfileSection({
           </select>
         </div>
 
+        {/* Statement descriptor */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Statement descriptor <span className="text-gray-400 font-normal">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={statementDescriptor}
+            onChange={(e) => setStatementDescriptor(e.target.value)}
+            placeholder="e.g. MY STORE"
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <p className="text-xs text-gray-400 mt-1">Shown on the payer's card statement. Defaults to SANDBOX if empty.</p>
+        </div>
+
         {error && (
           <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>
         )}
@@ -207,6 +225,18 @@ function ChargeSection({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [chargeResult, setChargeResult] = useState<OrderChargeResponse | null>(null);
+  // Advanced charge fields
+  const [processingMode, setProcessingMode] = useState<"" | "automatic" | "automatic_async">("");
+  const [retries, setRetries] = useState("");
+  const [sequenceTotal, setSequenceTotal] = useState("");
+  const [subscriptionMpId, setSubscriptionMpId] = useState("");
+  const [invoiceId, setInvoiceId] = useState("");
+  const [invoiceBillingDate, setInvoiceBillingDate] = useState("");
+  const [invoicePeriodInterval, setInvoicePeriodInterval] = useState("");
+  const [invoicePeriodType, setInvoicePeriodType] = useState("");
+  const [firstPayment, setFirstPayment] = useState(false);
+  const [previousTransactionReference, setPreviousTransactionReference] = useState("");
+  const [description, setDescription] = useState("");
 
   // Mirror parent selection
   useEffect(() => {
@@ -230,6 +260,17 @@ function ChargeSection({
     try {
       const payload: Parameters<typeof chargeNow>[0] = { subscriptionId: selectedSubId, amount: parsedAmount };
       if (sequenceNumber) payload.sequenceNumber = parseInt(sequenceNumber, 10);
+      if (processingMode) payload.processingMode = processingMode;
+      if (retries) payload.retries = parseInt(retries, 10);
+      if (sequenceTotal) payload.sequenceTotal = parseInt(sequenceTotal, 10);
+      if (subscriptionMpId) payload.subscriptionMpId = subscriptionMpId;
+      if (invoiceId) payload.invoiceId = invoiceId;
+      if (invoiceBillingDate) payload.invoiceBillingDate = invoiceBillingDate;
+      if (invoicePeriodInterval) payload.invoicePeriodInterval = parseInt(invoicePeriodInterval, 10);
+      if (invoicePeriodType) payload.invoicePeriodType = invoicePeriodType;
+      if (firstPayment) payload.firstPayment = firstPayment;
+      if (previousTransactionReference) payload.previousTransactionReference = previousTransactionReference;
+      if (description) payload.description = description;
       const result = await chargeNow(payload);
       setChargeResult(result);
       onCharged();
@@ -307,6 +348,144 @@ function ChargeSection({
             className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+
+        <AdvancedSection>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Processing mode <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <select
+              value={processingMode}
+              onChange={(e) => setProcessingMode(e.target.value as "" | "automatic" | "automatic_async")}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">— default (automatic_async) —</option>
+              <option value="automatic">automatic</option>
+              <option value="automatic_async">automatic_async</option>
+            </select>
+          </div>
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Retries <span className="text-gray-400 font-normal">(0–5)</span>
+              </label>
+              <input
+                type="number"
+                value={retries}
+                onChange={(e) => setRetries(e.target.value)}
+                min="0"
+                max="5"
+                placeholder="default: 3"
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Sequence total <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="number"
+                value={sequenceTotal}
+                onChange={(e) => setSequenceTotal(e.target.value)}
+                min="1"
+                placeholder="e.g. 12"
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Subscription MP ID <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={subscriptionMpId}
+              onChange={(e) => setSubscriptionMpId(e.target.value)}
+              placeholder="MP subscription id to link this charge"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <fieldset className="border border-gray-100 rounded p-3 space-y-3">
+            <legend className="text-xs font-medium text-gray-600 px-1">Invoice (optional)</legend>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-700 mb-1">Invoice ID</label>
+                <input
+                  type="text"
+                  value={invoiceId}
+                  onChange={(e) => setInvoiceId(e.target.value)}
+                  placeholder="inv-001"
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-700 mb-1">Billing date</label>
+                <input
+                  type="date"
+                  value={invoiceBillingDate}
+                  onChange={(e) => setInvoiceBillingDate(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-700 mb-1">Period interval</label>
+                <input
+                  type="number"
+                  value={invoicePeriodInterval}
+                  onChange={(e) => setInvoicePeriodInterval(e.target.value)}
+                  min="1"
+                  placeholder="e.g. 1"
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-700 mb-1">Period type</label>
+                <input
+                  type="text"
+                  value={invoicePeriodType}
+                  onChange={(e) => setInvoicePeriodType(e.target.value)}
+                  placeholder="e.g. monthly"
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          </fieldset>
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={firstPayment}
+              onChange={(e) => setFirstPayment(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>First payment <span className="text-gray-400 font-normal">(stored_credential.first_payment)</span></span>
+          </label>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Previous transaction reference <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={previousTransactionReference}
+              onChange={(e) => setPreviousTransactionReference(e.target.value)}
+              placeholder="stored credential continuity"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Description <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="e.g. Monthly subscription charge"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </AdvancedSection>
 
         {error && (
           <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>

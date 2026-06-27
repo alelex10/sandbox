@@ -4,6 +4,7 @@ import { WebhookList } from "../components/WebhookList.js";
 import { TimelineView } from "../components/TimelineView.js";
 import { Card } from "../components/Card.js";
 import { StatusBadge } from "../components/StatusBadge.js";
+import { AdvancedSection } from "../components/AdvancedSection.js";
 import { CardFormMpJs } from "../components/CardFormMpJs.js";
 import { CardBrick } from "../components/CardBrick.js";
 import { createA2, searchA2, listA2, getA2Detail, deleteA2, deleteAllA2 } from "../api.js";
@@ -22,6 +23,13 @@ interface FormState {
   amount: string;
   currency: string;
   startDate: string;
+  // Advanced
+  backUrl: string;
+  endDate: string;
+  freeTrialFrequency: string;
+  freeTrialFrequencyType: "months" | "days";
+  freeTrialFirstInvoiceOffset: string;
+  repetitions: string;
 }
 
 function tomorrow(): string {
@@ -55,6 +63,13 @@ export function A2Authorized() {
     amount: "",
     currency: "ARS",
     startDate: tomorrow(),
+    // Advanced
+    backUrl: "",
+    endDate: "",
+    freeTrialFrequency: "",
+    freeTrialFrequencyType: "months",
+    freeTrialFirstInvoiceOffset: "",
+    repetitions: "",
   });
 
   const [submitting, setSubmitting] = useState(false);
@@ -140,6 +155,17 @@ export function A2Authorized() {
     }
     setSubmitting(true);
     try {
+      const freeTrial =
+        form.freeTrialFrequency
+          ? {
+              frequency: Number(form.freeTrialFrequency),
+              frequencyType: form.freeTrialFrequencyType,
+              ...(form.freeTrialFirstInvoiceOffset
+                ? { firstInvoiceOffset: Number(form.freeTrialFirstInvoiceOffset) }
+                : {}),
+            }
+          : undefined;
+
       const payload: Parameters<typeof createA2>[0] = {
         reason: form.reason,
         payerEmail: form.payerEmail,
@@ -153,9 +179,13 @@ export function A2Authorized() {
           startDate: form.startDate
             ? new Date(form.startDate).toISOString()
             : undefined,
+          ...(form.endDate ? { endDate: new Date(form.endDate).toISOString() } : {}),
+          ...(freeTrial ? { freeTrial } : {}),
+          ...(form.repetitions ? { repetitions: Number(form.repetitions) } : {}),
         },
       };
       if (form.externalReference) payload.externalReference = form.externalReference;
+      if (form.backUrl) payload.backUrl = form.backUrl;
       const result = await createA2(payload);
       setCreateResult(result);
       setCardTokenId(null);
@@ -435,6 +465,88 @@ export function A2Authorized() {
                   />
                 </div>
               </fieldset>
+              <AdvancedSection>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Back URL <span className="text-gray-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="url"
+                    name="backUrl"
+                    value={form.backUrl}
+                    onChange={handleChange}
+                    placeholder="https://example.com/return"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    End date <span className="text-gray-400 font-normal">(autoRecurring.endDate, optional)</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    name="endDate"
+                    value={form.endDate}
+                    onChange={handleChange}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Repetitions <span className="text-gray-400 font-normal">(autoRecurring.repetitions, optional)</span>
+                  </label>
+                  <input
+                    type="number"
+                    name="repetitions"
+                    value={form.repetitions}
+                    onChange={handleChange}
+                    min="1"
+                    placeholder="e.g. 12"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <fieldset className="border border-gray-100 rounded p-3 space-y-3">
+                  <legend className="text-xs font-medium text-gray-600 px-1">Free trial (optional — fill frequency to enable)</legend>
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Frequency</label>
+                      <input
+                        type="number"
+                        name="freeTrialFrequency"
+                        value={form.freeTrialFrequency}
+                        onChange={handleChange}
+                        min="1"
+                        placeholder="e.g. 1"
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
+                      <select
+                        name="freeTrialFrequencyType"
+                        value={form.freeTrialFrequencyType}
+                        onChange={handleChange}
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="months">months</option>
+                        <option value="days">days</option>
+                      </select>
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">First invoice offset</label>
+                      <input
+                        type="number"
+                        name="freeTrialFirstInvoiceOffset"
+                        value={form.freeTrialFirstInvoiceOffset}
+                        onChange={handleChange}
+                        min="0"
+                        placeholder="e.g. 0"
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                </fieldset>
+              </AdvancedSection>
               {error && (
                 <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
                   {error.message}

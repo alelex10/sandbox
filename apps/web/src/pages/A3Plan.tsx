@@ -4,6 +4,7 @@ import { WebhookList } from "../components/WebhookList.js";
 import { TimelineView } from "../components/TimelineView.js";
 import { Card } from "../components/Card.js";
 import { StatusBadge } from "../components/StatusBadge.js";
+import { AdvancedSection } from "../components/AdvancedSection.js";
 import { CardFormMpJs } from "../components/CardFormMpJs.js";
 import { CardBrick } from "../components/CardBrick.js";
 import {
@@ -45,6 +46,15 @@ interface PlanFormState {
   currency: string;
   billingDay: string;
   billingDayProportional: boolean;
+  // Advanced
+  backUrl: string;
+  endDate: string;
+  freeTrialFrequency: string;
+  freeTrialFrequencyType: "months" | "days";
+  freeTrialFirstInvoiceOffset: string;
+  repetitions: string;
+  paymentTypesAllowed: string[];
+  paymentMethodsAllowed: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +175,15 @@ function PlanesView({
     currency: "ARS",
     billingDay: "",
     billingDayProportional: false,
+    // Advanced
+    backUrl: "",
+    endDate: "",
+    freeTrialFrequency: "",
+    freeTrialFrequencyType: "months",
+    freeTrialFirstInvoiceOffset: "",
+    repetitions: "",
+    paymentTypesAllowed: [],
+    paymentMethodsAllowed: [],
   });
   const [planSubmitting, setPlanSubmitting] = useState(false);
   const [planError, setPlanError] = useState<Error | null>(null);
@@ -218,6 +237,17 @@ function PlanesView({
     setPlanError(null);
     setPlanSubmitting(true);
     try {
+      const freeTrial =
+        planForm.freeTrialFrequency
+          ? {
+              frequency: Number(planForm.freeTrialFrequency),
+              frequencyType: planForm.freeTrialFrequencyType,
+              ...(planForm.freeTrialFirstInvoiceOffset
+                ? { firstInvoiceOffset: Number(planForm.freeTrialFirstInvoiceOffset) }
+                : {}),
+            }
+          : undefined;
+
       const payload: Parameters<typeof createPlan>[0] = {
         reason: planForm.reason,
         autoRecurring: {
@@ -225,11 +255,23 @@ function PlanesView({
           frequencyType: planForm.frequencyType,
           amount: Number(planForm.amount),
           currency: planForm.currency,
+          ...(planForm.endDate ? { endDate: new Date(planForm.endDate).toISOString() } : {}),
+          ...(freeTrial ? { freeTrial } : {}),
+          ...(planForm.repetitions ? { repetitions: Number(planForm.repetitions) } : {}),
         },
       };
       if (planForm.billingDay) {
         payload.billingDay = Number(planForm.billingDay);
         payload.billingDayProportional = planForm.billingDayProportional;
+      }
+      if (planForm.backUrl) payload.backUrl = planForm.backUrl;
+      const paymentTypes = planForm.paymentTypesAllowed;
+      const paymentMethods = planForm.paymentMethodsAllowed;
+      if (paymentTypes.length > 0 || paymentMethods.length > 0) {
+        payload.paymentMethodsAllowed = {
+          ...(paymentTypes.length > 0 ? { paymentTypes } : {}),
+          ...(paymentMethods.length > 0 ? { paymentMethods } : {}),
+        };
       }
       const created = await createPlan(payload);
       setPlanResult(created);
@@ -468,6 +510,128 @@ function PlanesView({
                 </span>
               </label>
             </fieldset>
+            <AdvancedSection>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Back URL <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="url"
+                  value={planForm.backUrl}
+                  onChange={(e) => setPlanForm((prev) => ({ ...prev, backUrl: e.target.value }))}
+                  placeholder="https://example.com/return"
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  End date <span className="text-gray-400 font-normal">(autoRecurring.endDate, optional)</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  value={planForm.endDate}
+                  onChange={(e) => setPlanForm((prev) => ({ ...prev, endDate: e.target.value }))}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Repetitions <span className="text-gray-400 font-normal">(autoRecurring.repetitions, optional)</span>
+                </label>
+                <input
+                  type="number"
+                  value={planForm.repetitions}
+                  onChange={(e) => setPlanForm((prev) => ({ ...prev, repetitions: e.target.value }))}
+                  min="1"
+                  placeholder="e.g. 12"
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <fieldset className="border border-gray-100 rounded p-3 space-y-3">
+                <legend className="text-xs font-medium text-gray-600 px-1">Free trial (optional — fill frequency to enable)</legend>
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Frequency</label>
+                    <input
+                      type="number"
+                      value={planForm.freeTrialFrequency}
+                      onChange={(e) => setPlanForm((prev) => ({ ...prev, freeTrialFrequency: e.target.value }))}
+                      min="1"
+                      placeholder="e.g. 1"
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
+                    <select
+                      value={planForm.freeTrialFrequencyType}
+                      onChange={(e) => setPlanForm((prev) => ({ ...prev, freeTrialFrequencyType: e.target.value as "months" | "days" }))}
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="months">months</option>
+                      <option value="days">days</option>
+                    </select>
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-gray-700 mb-1">First invoice offset</label>
+                    <input
+                      type="number"
+                      value={planForm.freeTrialFirstInvoiceOffset}
+                      onChange={(e) => setPlanForm((prev) => ({ ...prev, freeTrialFirstInvoiceOffset: e.target.value }))}
+                      min="0"
+                      placeholder="e.g. 0"
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </fieldset>
+              <div>
+                <p className="text-xs font-medium text-gray-700 mb-2">Payment types allowed</p>
+                <div className="flex flex-wrap gap-3">
+                  {(["credit_card", "debit_card", "ticket", "bank_transfer"] as const).map((pt) => (
+                    <label key={pt} className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={planForm.paymentTypesAllowed.includes(pt)}
+                        onChange={(e) =>
+                          setPlanForm((prev) => ({
+                            ...prev,
+                            paymentTypesAllowed: e.target.checked
+                              ? [...prev.paymentTypesAllowed, pt]
+                              : prev.paymentTypesAllowed.filter((x) => x !== pt),
+                          }))
+                        }
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      {pt}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-gray-700 mb-2">Payment methods allowed</p>
+                <div className="flex flex-wrap gap-3">
+                  {(["visa", "master", "amex", "naranja", "cabal"] as const).map((pm) => (
+                    <label key={pm} className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={planForm.paymentMethodsAllowed.includes(pm)}
+                        onChange={(e) =>
+                          setPlanForm((prev) => ({
+                            ...prev,
+                            paymentMethodsAllowed: e.target.checked
+                              ? [...prev.paymentMethodsAllowed, pm]
+                              : prev.paymentMethodsAllowed.filter((x) => x !== pm),
+                          }))
+                        }
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      {pm}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </AdvancedSection>
             {planError && (
               <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
                 {planError.message}
@@ -634,6 +798,11 @@ function SuscripcionesView({
   const [subSubmitting, setSubSubmitting] = useState(false);
   const [subError, setSubError] = useState<Error | null>(null);
   const [subResult, setSubResult] = useState<SubscribeResult | null>(null);
+  // Advanced subscribe fields
+  const [subBackUrl, setSubBackUrl] = useState("");
+  const [subStartDate, setSubStartDate] = useState("");
+  const [subEndDate, setSubEndDate] = useState("");
+  const [subReason, setSubReason] = useState("");
 
   // Search
   const [searchMpId, setSearchMpId] = useState("");
@@ -701,6 +870,10 @@ function SuscripcionesView({
         payload.cardTokenId = cardTokenId;
         payload.tokenization = tokenSource;
       }
+      if (subBackUrl) payload.backUrl = subBackUrl;
+      if (subStartDate) payload.startDate = new Date(subStartDate).toISOString();
+      if (subEndDate) payload.endDate = new Date(subEndDate).toISOString();
+      if (subReason) payload.reason = subReason;
       const res = await subscribeToPlan(payload);
       setSubResult(res);
       setCardTokenId(null);
@@ -973,6 +1146,54 @@ function SuscripcionesView({
               </div>
             )}
 
+            <AdvancedSection>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Back URL <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="url"
+                  value={subBackUrl}
+                  onChange={(e) => setSubBackUrl(e.target.value)}
+                  placeholder="https://example.com/return"
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Start date <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  value={subStartDate}
+                  onChange={(e) => setSubStartDate(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  End date <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  value={subEndDate}
+                  onChange={(e) => setSubEndDate(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reason <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={subReason}
+                  onChange={(e) => setSubReason(e.target.value)}
+                  placeholder="e.g. monthly plan"
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </AdvancedSection>
             {subError && (
               <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
                 {subError.message}
