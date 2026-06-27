@@ -4,12 +4,16 @@ import { A1Pending } from "./pages/A1Pending.js";
 import { A2Authorized } from "./pages/A2Authorized.js";
 import { A3Plan } from "./pages/A3Plan.js";
 import { BOrders } from "./pages/BOrders.js";
+import { ConfigEnv } from "./pages/ConfigEnv.js";
 
-const TABS: { label: string; value: SubscriptionMethod }[] = [
+type Tab = SubscriptionMethod | "config";
+
+const TABS: { label: string; value: Tab }[] = [
   { label: "A.1 Preapproval Pending", value: "a1_pending" },
   { label: "A.2 Preapproval Authorized", value: "a2_authorized" },
   { label: "A.3 Preapproval Plan", value: "a3_plan" },
   { label: "B Orders", value: "b_orders" },
+  { label: "⚙︎ Config / Env", value: "config" },
 ];
 
 function PlaceholderPage({ method }: { method: SubscriptionMethod }) {
@@ -22,7 +26,7 @@ function PlaceholderPage({ method }: { method: SubscriptionMethod }) {
 }
 
 export function App() {
-  const [activeMethod, setActiveMethod] = useState<SubscriptionMethod>("a1_pending");
+  const [activeMethod, setActiveMethod] = useState<Tab>("a1_pending");
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -63,6 +67,8 @@ export function App() {
           <A3Plan />
         ) : activeMethod === "b_orders" ? (
           <BOrders />
+        ) : activeMethod === "config" ? (
+          <ConfigEnv />
         ) : (
           <PlaceholderPage method={activeMethod} />
         )}

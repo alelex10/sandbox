@@ -34,6 +34,48 @@ export async function mpFetch(
   return res.json() as Promise<unknown>;
 }
 
+export type MpEnvironment = "test" | "production" | "unknown";
+
+/** Derive the environment from a credential prefix without leaking the value. */
+export function mpEnvironmentFromCredential(value: string): MpEnvironment {
+  if (value.startsWith("APP_USR-")) return "production";
+  if (value.startsWith("TEST-")) return "test";
+  return "unknown";
+}
+
+/**
+ * Mask a secret credential for display: keep the environment prefix and the last
+ * 4 chars, hide everything in between. The access token is secret — never return
+ * it in full.
+ */
+function maskCredential(value: string): string {
+  const prefix = value.startsWith("APP_USR-")
+    ? "APP_USR-"
+    : value.startsWith("TEST-")
+      ? "TEST-"
+      : "";
+  const last4 = value.slice(-4);
+  return `${prefix}…${last4}`;
+}
+
+/** Non-secret view of the MP credentials/config the API is running with. */
+export function getMpConfigInfo(): {
+  accessToken: { present: boolean; environment: MpEnvironment; masked: string };
+  notificationUrl: string | null;
+  backUrl: string | null;
+} {
+  const token = env.MP_ACCESS_TOKEN;
+  return {
+    accessToken: {
+      present: !!token,
+      environment: mpEnvironmentFromCredential(token),
+      masked: maskCredential(token),
+    },
+    notificationUrl: env.MP_NOTIFICATION_URL ?? null,
+    backUrl: env.MP_BACK_URL ?? null,
+  };
+}
+
 export function getMpNotificationUrl(): string | undefined {
   return env.MP_NOTIFICATION_URL;
 }

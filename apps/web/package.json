@@ -14,9 +14,13 @@
     "@uiw/react-json-view": "2.0.0-alpha.43",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "shared": "workspace:*"
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "shared": "workspace:*",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@tailwindcss/typography": "^0.5.20",
     "@tailwindcss/vite": "^4.1.8",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",

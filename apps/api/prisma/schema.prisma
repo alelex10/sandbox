@@ -100,3 +100,15 @@ model WebhookEvent {
   subscriptionId String?
   subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
 }
+
+model Note {
+  id        String    @id @default(uuid())
+  method    String
+  title     String
+  body      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([method])
+}
