@@ -6,6 +6,13 @@ import { tryJsonParse } from "../util.js";
 
 export const webhooksRouter = Router();
 
+// GET /webhooks/health — stable JSON marker used by the tunnel self-check
+// (diag/tunnel-check fetches this URL from the public tunnel to verify
+// the tunnel is reachable and forwarding to our process, not an auth wall)
+webhooksRouter.get("/health", (_req: Request, res: Response) => {
+  res.json({ ok: true, service: "mp-webhooks" });
+});
+
 // POST /webhooks/mp — ingest all MercadoPago webhook topics
 webhooksRouter.post(
   "/mp",

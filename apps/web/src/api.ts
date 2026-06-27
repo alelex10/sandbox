@@ -15,6 +15,7 @@ import type {
   NoteResponse,
   RecentPaymentsDiagResponse,
   SubscriptionPaymentsDiagResponse,
+  TunnelCheckResponse,
 } from "shared";
 
 import { API_URL as API } from "./config.js";
@@ -356,6 +357,12 @@ export function getSubscriptionPayments(
   return get<SubscriptionPaymentsDiagResponse>(
     `/diag/subscriptions/${encodeURIComponent(id)}/payments`,
   );
+}
+
+/** Tunnel connectivity self-check — server fetches its own public tunnel URL
+ *  and verifies the response is our /webhooks/health JSON marker. */
+export function checkTunnel(): Promise<TunnelCheckResponse> {
+  return get<TunnelCheckResponse>("/diag/tunnel-check");
 }
 
 export { post, get, del, patch };

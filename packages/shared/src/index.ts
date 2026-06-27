@@ -239,6 +239,32 @@ export type SubscriptionPaymentsDiagResponse = z.infer<
 >;
 
 // ---------------------------------------------------------------------------
+// Tunnel connectivity self-check
+// ---------------------------------------------------------------------------
+
+export const TunnelCheckResponse = z.discriminatedUnion("configured", [
+  // MP_NOTIFICATION_URL not set
+  z.object({
+    configured: z.literal(false),
+    verdict: z.string(),
+  }),
+  // MP_NOTIFICATION_URL set — result of the self-fetch
+  z.object({
+    configured: z.literal(true),
+    configuredUrl: z.string(),
+    checkedUrl: z.string().optional(),
+    reachable: z.boolean(),
+    status: z.number().nullable().optional(),
+    isOurJson: z.boolean().optional(),
+    looksLikeAuthWall: z.boolean().optional(),
+    bodyPreview: z.string().nullable().optional(),
+    verdict: z.string(),
+    detail: z.string().optional(),
+  }),
+]);
+export type TunnelCheckResponse = z.infer<typeof TunnelCheckResponse>;
+
+// ---------------------------------------------------------------------------
 // Notes
 // ---------------------------------------------------------------------------
 

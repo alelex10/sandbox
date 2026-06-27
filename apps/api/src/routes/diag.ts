@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "../db.js";
 import { mpFetch } from "../mp.js";
+import { env } from "../config.js";
 
 export const diagRouter = Router();
 
@@ -261,5 +262,143 @@ diagRouter.get(
     } catch (err) {
       next(err);
     }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// GET /diag/tunnel-check
+// Server-side self-check: fetches the public tunnel URL and verifies it
+// returns our own /webhooks/health marker. Detects auth-wall responses
+// (VSCode private dev tunnels redirect to a GitHub login page).
+// ---------------------------------------------------------------------------
+
+diagRouter.get(
+  "/tunnel-check",
+  async (_req: Request, res: Response) => {
+    const configuredUrl = env.MP_NOTIFICATION_URL ?? null;
+
+    if (!configuredUrl) {
+      res.json({
+        configured: false,
+        verdict: "MP_NOTIFICATION_URL no está seteado en el .env",
+      });
+      return;
+    }
+
+    let checkedUrl: string;
+    try {
+      checkedUrl = new URL(configuredUrl).origin + "/webhooks/health";
+    } catch {
+      res.json({
+        configured: true,
+        configuredUrl,
+        reachable: false,
+        verdict: "MP_NOTIFICATION_URL no es una URL válida.",
+        detail: "Could not parse origin from MP_NOTIFICATION_URL",
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8_000);
+
+    let reachable = false;
+    let status: number | null = null;
+    let contentType: string | null = null;
+    let bodyPreview: string | null = null;
+    let isOurJson = false;
+    let looksLikeAuthWall = false;
+
+    try {
+      const response = await fetch(checkedUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      reachable = true;
+      status = response.status;
+      contentType = response.headers.get("content-type");
+
+      const rawBody = await response.text();
+      bodyPreview = rawBody.slice(0, 500);
+
+      // Check for our own JSON marker
+      if (status === 200 && contentType?.includes("application/json")) {
+        try {
+          const parsed = JSON.parse(rawBody) as unknown;
+          if (
+            parsed !== null &&
+            typeof parsed === "object" &&
+            (parsed as Record<string, unknown>).ok === true &&
+            (parsed as Record<string, unknown>).service === "mp-webhooks"
+          ) {
+            isOurJson = true;
+          }
+        } catch {
+          // body is not valid JSON
+        }
+      }
+
+      // Heuristic: detect VSCode private-tunnel auth wall
+      // The auth wall is served as text/html and contains phrases like
+      // "sign in", "GitHub", "authorize", "login", or "tunnel" + "access".
+      if (!isOurJson) {
+        const lowerBody = rawBody.toLowerCase();
+        const htmlContent = contentType?.includes("text/html") ?? false;
+        const authPhrases = ["sign in", "github", "authorize", "login"];
+        const tunnelAccess =
+          lowerBody.includes("tunnel") && lowerBody.includes("access");
+        const hasAuthPhrase = authPhrases.some((phrase) =>
+          lowerBody.includes(phrase),
+        );
+        looksLikeAuthWall = htmlContent || hasAuthPhrase || tunnelAccess;
+      }
+    } catch (fetchErr) {
+      clearTimeout(timeoutId);
+      reachable = false;
+
+      const detail =
+        fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+      res.json({
+        configured: true,
+        configuredUrl,
+        checkedUrl,
+        reachable: false,
+        status: null,
+        isOurJson: false,
+        looksLikeAuthWall: false,
+        bodyPreview: null,
+        verdict:
+          "❌ No se pudo alcanzar la URL (timeout/DNS/conexión). Revisá que el túnel esté levantado y la URL sea correcta.",
+        detail,
+      });
+      return;
+    }
+
+    // Derive verdict
+    let verdict: string;
+    if (isOurJson) {
+      verdict =
+        "✅ El túnel es público y alcanzable — MP podría entregar webhooks.";
+    } else if (reachable && looksLikeAuthWall) {
+      verdict =
+        "❌ El túnel responde pero NO es público (parece pantalla de login). Poné el puerto en visibilidad Public.";
+    } else if (reachable && !isOurJson) {
+      verdict =
+        "⚠️ Respondió algo inesperado (no es nuestro endpoint). Revisá que la URL apunte a la API (puerto 3000) y a /webhooks.";
+    } else {
+      verdict =
+        "❌ No se pudo alcanzar la URL (timeout/DNS/conexión). Revisá que el túnel esté levantado y la URL sea correcta.";
+    }
+
+    res.json({
+      configured: true,
+      configuredUrl,
+      checkedUrl,
+      reachable,
+      status,
+      isOurJson,
+      looksLikeAuthWall,
+      bodyPreview,
+      verdict,
+    });
   },
 );

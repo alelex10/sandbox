@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { Card } from "../components/Card.js";
-import { getMpConfig, type MpConfigInfo, type MpEnvironment } from "../api.js";
+import {
+  getMpConfig,
+  checkTunnel,
+  type MpConfigInfo,
+  type MpEnvironment,
+} from "../api.js";
+import type { TunnelCheckResponse } from "shared";
 import { MP_PUBLIC_KEY, mpEnvironment } from "../config.js";
 
 /** Color-coded badge for a MercadoPago environment. */
@@ -26,6 +32,116 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
         {value}
       </span>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tunnel connectivity self-check component
+// ---------------------------------------------------------------------------
+
+function verdictStyle(result: TunnelCheckResponse & { configured: true }): string {
+  if (result.isOurJson) return "border-green-300 bg-green-50 text-green-800";
+  if (result.looksLikeAuthWall) return "border-red-300 bg-red-50 text-red-800";
+  if (result.reachable) return "border-yellow-300 bg-yellow-50 text-yellow-800";
+  return "border-red-300 bg-red-50 text-red-800";
+}
+
+function TunnelCheck() {
+  const [result, setResult] = useState<TunnelCheckResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [bodyOpen, setBodyOpen] = useState(false);
+
+  function run() {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    setBodyOpen(false);
+    checkTunnel()
+      .then(setResult)
+      .catch((e: unknown) =>
+        setError(e instanceof Error ? e.message : "Error al comprobar el túnel"),
+      )
+      .finally(() => setLoading(false));
+  }
+
+  return (
+    <Card title="Comprobar túnel">
+      <p className="text-sm text-gray-500 mb-3">
+        El servidor hace un fetch a su propia URL pública y verifica que
+        la respuesta sea nuestro endpoint (no una pantalla de login de GitHub).
+      </p>
+
+      <button
+        onClick={run}
+        disabled={loading}
+        className="px-4 py-2 text-sm font-medium rounded-md bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {loading ? "Probando…" : "Probar conectividad del túnel"}
+      </button>
+
+      {error && (
+        <p className="mt-3 text-sm text-red-600">{error}</p>
+      )}
+
+      {result && !result.configured && (
+        <div className="mt-3 rounded-lg border border-yellow-300 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+          {result.verdict}
+        </div>
+      )}
+
+      {result && result.configured && (
+        <div className="mt-3 space-y-3">
+          {/* Verdict banner */}
+          <div
+            className={`rounded-lg border px-4 py-3 text-sm font-medium ${verdictStyle(result)}`}
+          >
+            {result.verdict}
+          </div>
+
+          {/* Details table */}
+          <div className="rounded-lg border border-gray-200 divide-y divide-gray-100 text-sm">
+            <div className="flex items-start justify-between gap-4 px-3 py-2">
+              <span className="text-xs text-gray-500 shrink-0">URL configurada</span>
+              <span className="font-mono text-gray-900 break-all text-right">
+                {result.configuredUrl}
+              </span>
+            </div>
+            {result.checkedUrl && (
+              <div className="flex items-start justify-between gap-4 px-3 py-2">
+                <span className="text-xs text-gray-500 shrink-0">URL comprobada</span>
+                <span className="font-mono text-gray-900 break-all text-right">
+                  {result.checkedUrl}
+                </span>
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-4 px-3 py-2">
+              <span className="text-xs text-gray-500">HTTP status</span>
+              <span className="font-mono text-gray-900">
+                {result.status ?? "—"}
+              </span>
+            </div>
+          </div>
+
+          {/* Body preview — collapsible */}
+          {result.bodyPreview && (
+            <div>
+              <button
+                onClick={() => setBodyOpen((v) => !v)}
+                className="text-xs text-gray-500 underline underline-offset-2 hover:text-gray-700"
+              >
+                {bodyOpen ? "Ocultar body preview" : "Ver body preview"}
+              </button>
+              {bodyOpen && (
+                <pre className="mt-2 overflow-x-auto rounded-md bg-gray-100 px-3 py-2 text-xs text-gray-700 whitespace-pre-wrap break-all">
+                  {result.bodyPreview}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -125,6 +241,9 @@ export function ConfigEnv() {
           )}
         </Card>
       </div>
+
+      {/* Tunnel connectivity self-check */}
+      <TunnelCheck />
     </div>
   );
 }
