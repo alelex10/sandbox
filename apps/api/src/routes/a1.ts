@@ -24,13 +24,22 @@ a1Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
       reason: body.reason,
       payerEmail: body.payerEmail,
       externalReference,
-      backUrl: getMpBackUrl(),
+      backUrl: body.backUrl ?? getMpBackUrl(),
       autoRecurring: {
         frequency: body.autoRecurring.frequency,
         frequencyType: body.autoRecurring.frequencyType,
         amount: body.autoRecurring.amount,
         currency: body.autoRecurring.currency,
         startDate,
+        ...(body.autoRecurring.endDate !== undefined
+          ? { endDate: body.autoRecurring.endDate }
+          : {}),
+        ...(body.autoRecurring.freeTrial !== undefined
+          ? { freeTrial: body.autoRecurring.freeTrial }
+          : {}),
+        ...(body.autoRecurring.repetitions !== undefined
+          ? { repetitions: body.autoRecurring.repetitions }
+          : {}),
       },
     });
 

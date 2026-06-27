@@ -222,7 +222,7 @@ a3Router.post("/plans", async (req: Request, res: Response, next: NextFunction) 
 
     const result = await createPlan(mpClient(), {
       reason: body.reason,
-      backUrl: getMpBackUrl(),
+      backUrl: body.backUrl ?? getMpBackUrl(),
       autoRecurring: {
         frequency: body.autoRecurring.frequency,
         frequencyType: body.autoRecurring.frequencyType,
@@ -234,7 +234,19 @@ a3Router.post("/plans", async (req: Request, res: Response, next: NextFunction) 
         ...(body.billingDayProportional !== undefined
           ? { billingDayProportional: body.billingDayProportional }
           : {}),
+        ...(body.autoRecurring.endDate !== undefined
+          ? { endDate: body.autoRecurring.endDate }
+          : {}),
+        ...(body.autoRecurring.freeTrial !== undefined
+          ? { freeTrial: body.autoRecurring.freeTrial }
+          : {}),
+        ...(body.autoRecurring.repetitions !== undefined
+          ? { repetitions: body.autoRecurring.repetitions }
+          : {}),
       },
+      ...(body.paymentMethodsAllowed !== undefined
+        ? { paymentMethodsAllowed: body.paymentMethodsAllowed }
+        : {}),
     });
 
     // Guard against missing mpPlanId — do not persist a null plan id
@@ -335,7 +347,10 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
         payerEmail: body.payerEmail,
         externalReference: body.externalReference,
         cardTokenId: body.cardTokenId,
-        backUrl: getMpBackUrl(),
+        backUrl: body.backUrl ?? getMpBackUrl(),
+        ...(body.reason !== undefined ? { reason: body.reason } : {}),
+        ...(body.startDate !== undefined ? { startDate: body.startDate } : {}),
+        ...(body.endDate !== undefined ? { endDate: body.endDate } : {}),
       });
 
       const rawCreate = JSON.stringify(result);

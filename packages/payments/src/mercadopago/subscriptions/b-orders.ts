@@ -43,6 +43,28 @@ export interface ChargeOrderInput {
   externalReference: string;
   /** Optional sequence number in the subscription series. */
   sequenceNumber?: number;
+  /** Order-level processing mode. Defaults to "automatic_async" when absent. */
+  processingMode?: "automatic" | "automatic_async";
+  /** Human-readable description for the order. */
+  description?: string;
+  /** Number of automatic retry attempts. Defaults to 3 when absent. */
+  retries?: number;
+  /** Total number of charges expected in this subscription series. */
+  sequenceTotal?: number;
+  /** MP subscription id to link this charge to a specific subscription. */
+  subscriptionMpId?: string;
+  /** Invoice id for this charge. */
+  invoiceId?: string;
+  /** Invoice billing date (ISO string). */
+  invoiceBillingDate?: string;
+  /** Billing period interval (number). */
+  invoicePeriodInterval?: number;
+  /** Billing period type (e.g. "monthly"). */
+  invoicePeriodType?: string;
+  /** Whether this is the first payment in the series. Defaults to false. */
+  firstPayment?: boolean;
+  /** Reference to the previous transaction for stored credential continuity. */
+  previousTransactionReference?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -141,39 +163,92 @@ export async function chargeOrder(input: ChargeOrderInput): Promise<unknown> {
   const idempotencyKey = crypto.randomUUID();
   const amountStr = input.amount.toFixed(2);
 
+  // Build subscription sub-object only when at least one field is provided.
+  const hasSequence =
+    input.sequenceNumber !== undefined || input.sequenceTotal !== undefined;
+  const hasInvoice =
+    input.invoiceId !== undefined ||
+    input.invoiceBillingDate !== undefined ||
+    input.invoicePeriodInterval !== undefined ||
+    input.invoicePeriodType !== undefined;
+  const hasSubscription = hasSequence || hasInvoice || input.subscriptionMpId !== undefined;
+
+  const subscriptionField: Record<string, unknown> | undefined = hasSubscription
+    ? {
+        ...(input.subscriptionMpId !== undefined
+          ? { id: input.subscriptionMpId }
+          : {}),
+        ...(hasSequence
+          ? {
+              sequence: {
+                ...(input.sequenceNumber !== undefined
+                  ? { number: input.sequenceNumber }
+                  : {}),
+                ...(input.sequenceTotal !== undefined
+                  ? { total: input.sequenceTotal }
+                  : {}),
+              },
+            }
+          : {}),
+        ...(hasInvoice
+          ? {
+              invoice: {
+                ...(input.invoiceId !== undefined
+                  ? { id: input.invoiceId }
+                  : {}),
+                ...(input.invoiceBillingDate !== undefined
+                  ? { billing_date: input.invoiceBillingDate }
+                  : {}),
+                ...(input.invoicePeriodInterval !== undefined ||
+                input.invoicePeriodType !== undefined
+                  ? {
+                      period: {
+                        ...(input.invoicePeriodInterval !== undefined
+                          ? { interval: input.invoicePeriodInterval }
+                          : {}),
+                        ...(input.invoicePeriodType !== undefined
+                          ? { type: input.invoicePeriodType }
+                          : {}),
+                      },
+                    }
+                  : {}),
+              },
+            }
+          : {}),
+      }
+    : undefined;
+
   const payment: Record<string, unknown> = {
     amount: amountStr,
     automatic_payments: {
       payment_profile_id: input.paymentProfileId,
-      retries: 3,
-      ...(input.sequenceNumber !== undefined
-        ? {
-            subscription: {
-              sequence: {
-                number: input.sequenceNumber,
-              },
-            },
-          }
+      retries: input.retries ?? 3,
+      ...(subscriptionField !== undefined
+        ? { subscription: subscriptionField }
         : {}),
     },
     stored_credential: {
       payment_initiator: "customer",
       reason: "recurring",
-      first_payment: false,
+      first_payment: input.firstPayment ?? false,
+      ...(input.previousTransactionReference !== undefined
+        ? { previous_transaction_reference: input.previousTransactionReference }
+        : {}),
     },
   };
 
-  const orderBody = {
+  const orderBody: Record<string, unknown> = {
     type: "online",
     external_reference: input.externalReference,
     total_amount: amountStr,
-    processing_mode: "automatic_async",
+    processing_mode: input.processingMode ?? "automatic_async",
     payer: {
       customer_id: input.customerId,
     },
     transactions: {
       payments: [payment],
     },
+    ...(input.description !== undefined ? { description: input.description } : {}),
   };
 
   return mpRawFetch(input.accessToken, "/v1/orders", {

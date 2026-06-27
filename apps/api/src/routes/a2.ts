@@ -24,7 +24,7 @@ a2Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
       reason: body.reason,
       payerEmail: body.payerEmail,
       externalReference,
-      backUrl: getMpBackUrl(),
+      backUrl: body.backUrl ?? getMpBackUrl(),
       cardTokenId: body.cardTokenId,
       autoRecurring: {
         frequency: body.autoRecurring.frequency,
@@ -32,6 +32,15 @@ a2Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
         amount: body.autoRecurring.amount,
         currency: body.autoRecurring.currency,
         startDate,
+        ...(body.autoRecurring.endDate !== undefined
+          ? { endDate: body.autoRecurring.endDate }
+          : {}),
+        ...(body.autoRecurring.freeTrial !== undefined
+          ? { freeTrial: body.autoRecurring.freeTrial }
+          : {}),
+        ...(body.autoRecurring.repetitions !== undefined
+          ? { repetitions: body.autoRecurring.repetitions }
+          : {}),
       },
     });
 

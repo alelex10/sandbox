@@ -25,6 +25,15 @@ export const AutoRecurring = z.object({
   amount: z.number().positive(),
   currency: z.string().length(3).default("ARS"),
   startDate: z.string().datetime().optional(),
+  endDate: z.string().datetime().optional(),
+  freeTrial: z
+    .object({
+      frequency: z.number().int().positive(),
+      frequencyType: z.enum(["months", "days"]),
+      firstInvoiceOffset: z.number().int().nonnegative().optional(),
+    })
+    .optional(),
+  repetitions: z.number().int().positive().optional(),
 });
 export type AutoRecurring = z.infer<typeof AutoRecurring>;
 
@@ -36,6 +45,7 @@ export const CreateA1Request = z.object({
   reason: z.string().min(1),
   payerEmail: z.string().email(),
   externalReference: z.string().min(1).optional(),
+  backUrl: z.string().url().optional(),
   autoRecurring: AutoRecurring,
 });
 export type CreateA1Request = z.infer<typeof CreateA1Request>;
@@ -51,6 +61,13 @@ export const CreatePlanRequest = z.object({
   autoRecurring: AutoRecurring,
   billingDay: z.number().int().min(1).max(28).optional(),
   billingDayProportional: z.boolean().optional(),
+  backUrl: z.string().url().optional(),
+  paymentMethodsAllowed: z
+    .object({
+      paymentTypes: z.array(z.string()).optional(),
+      paymentMethods: z.array(z.string()).optional(),
+    })
+    .optional(),
 });
 export type CreatePlanRequest = z.infer<typeof CreatePlanRequest>;
 
@@ -60,6 +77,10 @@ export const SubscribeToPlanRequest = z.object({
   externalReference: z.string().min(1),
   cardTokenId: z.string().min(1).optional(),
   tokenization: Tokenization.optional(),
+  backUrl: z.string().url().optional(),
+  startDate: z.string().datetime().optional(),
+  endDate: z.string().datetime().optional(),
+  reason: z.string().min(1).optional(),
 });
 export type SubscribeToPlanRequest = z.infer<typeof SubscribeToPlanRequest>;
 
@@ -75,6 +96,17 @@ export const ChargeOrderRequest = z.object({
   subscriptionId: z.string().min(1),
   amount: z.number().positive(),
   sequenceNumber: z.number().int().positive().optional(),
+  processingMode: z.enum(["automatic", "automatic_async"]).optional(),
+  retries: z.number().int().min(0).max(5).optional(),
+  sequenceTotal: z.number().int().positive().optional(),
+  subscriptionMpId: z.string().optional(),
+  invoiceId: z.string().optional(),
+  invoiceBillingDate: z.string().optional(),
+  invoicePeriodInterval: z.number().int().positive().optional(),
+  invoicePeriodType: z.string().optional(),
+  firstPayment: z.boolean().optional(),
+  previousTransactionReference: z.string().optional(),
+  description: z.string().optional(),
 });
 export type ChargeOrderRequest = z.infer<typeof ChargeOrderRequest>;
 

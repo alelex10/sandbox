@@ -15,6 +15,13 @@ export interface CreateA1Input {
     amount: number;
     currency: string;
     startDate?: string;
+    endDate?: string;
+    freeTrial?: {
+      frequency: number;
+      frequencyType: "months" | "days";
+      firstInvoiceOffset?: number;
+    };
+    repetitions?: number;
   };
 }
 
@@ -42,6 +49,23 @@ export async function createA1(
         transaction_amount: input.autoRecurring.amount,
         currency_id: input.autoRecurring.currency,
         start_date: input.autoRecurring.startDate,
+        ...(input.autoRecurring.endDate !== undefined
+          ? { end_date: input.autoRecurring.endDate }
+          : {}),
+        ...(input.autoRecurring.freeTrial !== undefined
+          ? {
+              free_trial: {
+                frequency: input.autoRecurring.freeTrial.frequency,
+                frequency_type: input.autoRecurring.freeTrial.frequencyType,
+                ...(input.autoRecurring.freeTrial.firstInvoiceOffset !== undefined
+                  ? { first_invoice_offset: input.autoRecurring.freeTrial.firstInvoiceOffset }
+                  : {}),
+              },
+            }
+          : {}),
+        ...(input.autoRecurring.repetitions !== undefined
+          ? { repetitions: input.autoRecurring.repetitions }
+          : {}),
       },
     },
     requestOptions: {

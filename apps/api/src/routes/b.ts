@@ -148,6 +148,37 @@ bRouter.post("/charge", async (req: Request, res: Response, next: NextFunction) 
         amount: body.amount,
         externalReference,
         sequenceNumber: body.sequenceNumber,
+        ...(body.processingMode !== undefined
+          ? { processingMode: body.processingMode }
+          : {}),
+        ...(body.retries !== undefined ? { retries: body.retries } : {}),
+        ...(body.sequenceTotal !== undefined
+          ? { sequenceTotal: body.sequenceTotal }
+          : {}),
+        ...(body.subscriptionMpId !== undefined
+          ? { subscriptionMpId: body.subscriptionMpId }
+          : {}),
+        ...(body.invoiceId !== undefined
+          ? { invoiceId: body.invoiceId }
+          : {}),
+        ...(body.invoiceBillingDate !== undefined
+          ? { invoiceBillingDate: body.invoiceBillingDate }
+          : {}),
+        ...(body.invoicePeriodInterval !== undefined
+          ? { invoicePeriodInterval: body.invoicePeriodInterval }
+          : {}),
+        ...(body.invoicePeriodType !== undefined
+          ? { invoicePeriodType: body.invoicePeriodType }
+          : {}),
+        ...(body.firstPayment !== undefined
+          ? { firstPayment: body.firstPayment }
+          : {}),
+        ...(body.previousTransactionReference !== undefined
+          ? { previousTransactionReference: body.previousTransactionReference }
+          : {}),
+        ...(body.description !== undefined
+          ? { description: body.description }
+          : {}),
       });
     } catch (mpErr) {
       const detail = mpErr instanceof Error ? mpErr.message : "Unknown MP error";

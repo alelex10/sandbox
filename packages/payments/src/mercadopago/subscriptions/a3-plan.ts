@@ -21,8 +21,19 @@ export interface CreatePlanInput {
     currency: string;
     billingDay?: number;
     billingDayProportional?: boolean;
+    endDate?: string;
+    freeTrial?: {
+      frequency: number;
+      frequencyType: "months" | "days";
+      firstInvoiceOffset?: number;
+    };
+    repetitions?: number;
   };
   backUrl?: string;
+  paymentMethodsAllowed?: {
+    paymentTypes?: string[];
+    paymentMethods?: string[];
+  };
 }
 
 export interface SubscribeToPlanInput {
@@ -31,6 +42,9 @@ export interface SubscribeToPlanInput {
   externalReference: string;
   cardTokenId?: string;
   backUrl?: string;
+  reason?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 /**
@@ -61,7 +75,44 @@ export async function createPlan(
                 input.autoRecurring.billingDayProportional,
             }
           : {}),
+        ...(input.autoRecurring.endDate !== undefined
+          ? { end_date: input.autoRecurring.endDate }
+          : {}),
+        ...(input.autoRecurring.freeTrial !== undefined
+          ? {
+              free_trial: {
+                frequency: input.autoRecurring.freeTrial.frequency,
+                frequency_type: input.autoRecurring.freeTrial.frequencyType,
+                ...(input.autoRecurring.freeTrial.firstInvoiceOffset !== undefined
+                  ? { first_invoice_offset: input.autoRecurring.freeTrial.firstInvoiceOffset }
+                  : {}),
+              },
+            }
+          : {}),
+        ...(input.autoRecurring.repetitions !== undefined
+          ? { repetitions: input.autoRecurring.repetitions }
+          : {}),
       },
+      ...(input.paymentMethodsAllowed
+        ? {
+            payment_methods_allowed: {
+              ...(input.paymentMethodsAllowed.paymentTypes?.length
+                ? {
+                    payment_types: input.paymentMethodsAllowed.paymentTypes.map(
+                      (id) => ({ id }),
+                    ),
+                  }
+                : {}),
+              ...(input.paymentMethodsAllowed.paymentMethods?.length
+                ? {
+                    payment_methods: input.paymentMethodsAllowed.paymentMethods.map(
+                      (id) => ({ id }),
+                    ),
+                  }
+                : {}),
+            },
+          }
+        : {}),
     },
   });
 }
@@ -90,14 +141,33 @@ export async function subscribeToPlan(
 ): Promise<PreApprovalResult> {
   const preApproval = new PreApproval(client);
 
+  // When subscribing to a plan via API (card_token_id path), MP requires status: "authorized".
+  // Without it, the subscription is created in "pending" and never activates.
+  //
+  // The auto_recurring override only carries start_date / end_date — frequency and currency
+  // are inherited from the plan by MP. The SDK type requires those fields so we cast to any
+  // to avoid a spurious compile error while keeping the runtime body correct.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const body: any = {
+    preapproval_plan_id: input.preapprovalPlanId,
+    payer_email: input.payerEmail,
+    external_reference: input.externalReference,
+    ...(input.cardTokenId ? { card_token_id: input.cardTokenId } : {}),
+    ...(input.cardTokenId ? { status: "authorized" } : {}),
+    ...(input.backUrl ? { back_url: input.backUrl } : {}),
+    ...(input.reason ? { reason: input.reason } : {}),
+    ...(input.startDate !== undefined || input.endDate !== undefined
+      ? {
+          auto_recurring: {
+            ...(input.startDate !== undefined ? { start_date: input.startDate } : {}),
+            ...(input.endDate !== undefined ? { end_date: input.endDate } : {}),
+          },
+        }
+      : {}),
+  };
+
   return preApproval.create({
-    body: {
-      preapproval_plan_id: input.preapprovalPlanId,
-      payer_email: input.payerEmail,
-      external_reference: input.externalReference,
-      ...(input.cardTokenId ? { card_token_id: input.cardTokenId } : {}),
-      ...(input.backUrl ? { back_url: input.backUrl } : {}),
-    },
+    body,
     requestOptions: {
       idempotencyKey: crypto.randomUUID(),
     },
