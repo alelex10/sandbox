@@ -95,8 +95,8 @@ export function A1Pending() {
         setDetail(null);
         setSearchResult(null);
       }
-    } catch {
-      // non-critical
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
     }
   }
 

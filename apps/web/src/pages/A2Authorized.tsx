@@ -105,8 +105,8 @@ export function A2Authorized() {
         setDetail(null);
         setSearchResult(null);
       }
-    } catch {
-      // non-critical
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
     }
   }
 

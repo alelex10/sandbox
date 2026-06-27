@@ -114,6 +114,11 @@ bRouter.post("/charge", async (req: Request, res: Response, next: NextFunction) 
       return;
     }
 
+    if (subscription.deletedAt !== null) {
+      res.status(404).json({ error: "Subscription not found" });
+      return;
+    }
+
     if (!subscription.paymentProfileId) {
       res.status(400).json({
         error: "Subscription has no paymentProfileId — cannot charge",
@@ -328,7 +333,7 @@ bRouter.get("/:id/charges", async (req: Request, res: Response, next: NextFuncti
       where: { id: req.params.id },
     });
 
-    if (!subscription || subscription.method !== "b_orders") {
+    if (!subscription || subscription.method !== "b_orders" || subscription.deletedAt !== null) {
       res.status(404).json({ error: "B subscription not found" });
       return;
     }

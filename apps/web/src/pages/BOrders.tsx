@@ -379,8 +379,8 @@ export function BOrders() {
         setSelectedId(null);
         setDetail(null);
       }
-    } catch {
-      // non-critical
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
     }
   }
 

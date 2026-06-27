@@ -80,6 +80,11 @@ a3Router.get(
         return;
       }
 
+      if (plan.deletedAt !== null) {
+        res.status(404).json({ error: "Plan not found" });
+        return;
+      }
+
       if (!plan.mpPlanId) {
         res.status(422).json({ error: "Plan has no mpPlanId to search" });
         return;

@@ -146,7 +146,7 @@ function PlanesView({
   onPlansRefresh,
 }: {
   plans: PlanResponse[];
-  onPlansRefresh: () => void;
+  onPlansRefresh: () => Promise<void>;
 }) {
   // Master selection
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
@@ -190,13 +190,13 @@ function PlanesView({
     if (!window.confirm("¿Eliminar este registro del historial? (borrado lógico, los datos se conservan)")) return;
     try {
       await deletePlan(id);
-      onPlansRefresh();
+      await onPlansRefresh();
       if (selectedPlanId === id) {
         setSelectedPlanId(null);
         setPlanDetail(null);
       }
-    } catch {
-      // non-critical
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
     }
   }
 
@@ -221,10 +221,10 @@ function PlanesView({
           currency: planForm.currency,
         },
       };
-      if (planForm.billingDay) payload.billingDay = Number(planForm.billingDay);
-      // Send the explicit boolean (not only-if-true): MP defaults the field to
-      // true when omitted, so unchecking must send false to override that default.
-      payload.billingDayProportional = planForm.billingDayProportional;
+      if (planForm.billingDay) {
+        payload.billingDay = Number(planForm.billingDay);
+        payload.billingDayProportional = planForm.billingDayProportional;
+      }
       const created = await createPlan(payload);
       setPlanResult(created);
       onPlansRefresh();
@@ -582,7 +582,7 @@ function SuscripcionesView({
 }: {
   plans: PlanResponse[];
   subscriptions: SubscriptionResponse[];
-  onSubscriptionsRefresh: () => void;
+  onSubscriptionsRefresh: () => Promise<void>;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SubscriptionDetailResponse | null>(null);
@@ -624,14 +624,14 @@ function SuscripcionesView({
     if (!window.confirm("¿Eliminar este registro del historial? (borrado lógico, los datos se conservan)")) return;
     try {
       await deleteA3(id);
-      onSubscriptionsRefresh();
+      await onSubscriptionsRefresh();
       if (selectedId === id) {
         setSelectedId(null);
         setDetail(null);
         setSearchResult(null);
       }
-    } catch {
-      // non-critical
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
     }
   }
 
