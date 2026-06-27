@@ -168,6 +168,7 @@ a3Router.get(
             where: {
               category: "plan",
               mpResourceId: plan.mpPlanId,
+              deletedAt: null,
             },
             orderBy: { receivedAt: "asc" },
           })
@@ -574,7 +575,7 @@ a3Router.get(
         where: { id: req.params.id },
         include: {
           snapshots: { orderBy: { createdAt: "asc" } },
-          events: { orderBy: { receivedAt: "asc" } },
+          events: { where: { deletedAt: null }, orderBy: { receivedAt: "asc" } },
         },
       });
 
@@ -629,7 +630,7 @@ a3Router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const subscriptions = await db.subscription.findMany({
       where: { method: "a3_plan", deletedAt: null },
-      include: { events: { orderBy: { receivedAt: "desc" } } },
+      include: { events: { where: { deletedAt: null }, orderBy: { receivedAt: "desc" } } },
       orderBy: { createdAt: "desc" },
     });
 

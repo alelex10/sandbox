@@ -78,6 +78,14 @@ export function listWebhooks(
   return get<WebhookEventResponse[]>(`/webhooks${qs}`);
 }
 
+export function deleteWebhook(id: string): Promise<{ ok: boolean }> {
+  return del<{ ok: boolean }>(`/webhooks/${encodeURIComponent(id)}`);
+}
+
+export function clearWebhooks(): Promise<{ ok: boolean; count: number }> {
+  return del<{ ok: boolean; count: number }>("/webhooks");
+}
+
 // ---------------------------------------------------------------------------
 // A.1 — Preapproval Pending
 // ---------------------------------------------------------------------------

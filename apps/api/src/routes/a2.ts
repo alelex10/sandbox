@@ -95,7 +95,7 @@ a2Router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const subscriptions = await db.subscription.findMany({
       where: { method: "a2_authorized", deletedAt: null },
-      include: { events: { orderBy: { receivedAt: "desc" } } },
+      include: { events: { where: { deletedAt: null }, orderBy: { receivedAt: "desc" } } },
       orderBy: { createdAt: "desc" },
     });
 
@@ -241,7 +241,7 @@ a2Router.get(
         where: { id: req.params.id },
         include: {
           snapshots: { orderBy: { createdAt: "asc" } },
-          events: { orderBy: { receivedAt: "asc" } },
+          events: { where: { deletedAt: null }, orderBy: { receivedAt: "asc" } },
         },
       });
 

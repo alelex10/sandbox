@@ -97,6 +97,7 @@ model WebhookEvent {
   rawBody        String
   rawFetched     String?
   receivedAt     DateTime      @default(now())
+  deletedAt      DateTime?
   subscriptionId String?
   subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
 }

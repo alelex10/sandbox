@@ -227,7 +227,7 @@ bRouter.get("/", async (_req: Request, res: Response, next: NextFunction) => {
       where: { method: "b_orders", deletedAt: null },
       include: {
         charges: { orderBy: { createdAt: "desc" } },
-        events: { orderBy: { receivedAt: "desc" } },
+        events: { where: { deletedAt: null }, orderBy: { receivedAt: "desc" } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -315,7 +315,7 @@ bRouter.get(
         include: {
           snapshots: { orderBy: { createdAt: "asc" } },
           charges: { orderBy: { createdAt: "asc" } },
-          events: { orderBy: { receivedAt: "asc" } },
+          events: { where: { deletedAt: null }, orderBy: { receivedAt: "asc" } },
         },
       });
 

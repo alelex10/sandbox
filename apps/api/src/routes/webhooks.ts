@@ -99,6 +99,37 @@ export async function mpWebhookHandler(
 
 webhooksRouter.post("/mp", mpWebhookHandler);
 
+// DELETE /webhooks/:id — soft-delete a single webhook event
+webhooksRouter.delete("/:id", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const existing = await db.webhookEvent.findUnique({ where: { id: req.params.id } });
+    if (!existing || existing.deletedAt !== null) {
+      res.status(404).json({ error: "Webhook event not found" });
+      return;
+    }
+    await db.webhookEvent.update({
+      where: { id: req.params.id },
+      data: { deletedAt: new Date() },
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /webhooks — soft-delete all webhook events
+webhooksRouter.delete("/", async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await db.webhookEvent.updateMany({
+      where: { deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
+    res.json({ ok: true, count: result.count });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /webhooks?method= — list events, optionally filtered by method.
 // Special value "unattributed" returns events where method IS NULL or "unknown".
 webhooksRouter.get("/", async (req: Request, res: Response, next: NextFunction) => {
@@ -108,10 +139,10 @@ webhooksRouter.get("/", async (req: Request, res: Response, next: NextFunction) 
     const events = await db.webhookEvent.findMany({
       where:
         method === "unattributed"
-          ? { OR: [{ method: null }, { method: "unknown" }] }
+          ? { OR: [{ method: null }, { method: "unknown" }], deletedAt: null }
           : method
-            ? { method }
-            : undefined,
+            ? { method, deletedAt: null }
+            : { deletedAt: null },
       orderBy: { receivedAt: "desc" },
       take: 200,
     });

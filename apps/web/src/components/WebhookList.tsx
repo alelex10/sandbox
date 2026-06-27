@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import type { SubscriptionMethod, WebhookEventResponse } from "shared";
-import { listWebhooks } from "../api.js";
+import { listWebhooks, deleteWebhook, clearWebhooks } from "../api.js";
 import { JsonViewer } from "./JsonViewer.js";
 
 interface WebhookListProps {
@@ -35,9 +35,41 @@ export function WebhookList({ method, pollIntervalMs = 5000 }: WebhookListProps)
 
   const attributed = events.filter((e) => e.method !== null);
   const unclassified = unattributed;
+  const totalCount = attributed.length + unclassified.length;
+
+  const handleClearAll = async () => {
+    if (!window.confirm("Delete all webhook events? This cannot be undone.")) return;
+    try {
+      await clearWebhooks();
+      await fetchEvents();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Failed to clear webhooks");
+    }
+  };
+
+  const handleDeleteOne = async (id: string) => {
+    try {
+      await deleteWebhook(id);
+      await fetchEvents();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Failed to delete webhook");
+    }
+  };
 
   return (
     <div className="mt-2">
+      {totalCount > 0 && (
+        <div className="flex justify-end mb-2">
+          <button
+            type="button"
+            onClick={handleClearAll}
+            className="text-xs text-red-500 hover:text-red-700 hover:underline font-sans"
+          >
+            Eliminar todo
+          </button>
+        </div>
+      )}
+
       {error && (
         <p className="text-sm text-red-600 mb-2">{error}</p>
       )}
@@ -47,7 +79,7 @@ export function WebhookList({ method, pollIntervalMs = 5000 }: WebhookListProps)
           <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
             Attributed ({attributed.length})
           </h4>
-          <EventList events={attributed} />
+          <EventList events={attributed} onDelete={handleDeleteOne} />
         </div>
       )}
 
@@ -56,7 +88,7 @@ export function WebhookList({ method, pollIntervalMs = 5000 }: WebhookListProps)
           <h4 className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
             Unclassified ({unclassified.length})
           </h4>
-          <EventList events={unclassified} muted />
+          <EventList events={unclassified} muted onDelete={handleDeleteOne} />
         </div>
       )}
 
@@ -70,20 +102,22 @@ export function WebhookList({ method, pollIntervalMs = 5000 }: WebhookListProps)
 function EventList({
   events,
   muted = false,
+  onDelete,
 }: {
   events: WebhookEventResponse[];
   muted?: boolean;
+  onDelete: (id: string) => void;
 }) {
   return (
     <ul className="space-y-2">
       {events.map((ev) => (
-        <EventItem key={ev.id} ev={ev} muted={muted} />
+        <EventItem key={ev.id} ev={ev} muted={muted} onDelete={onDelete} />
       ))}
     </ul>
   );
 }
 
-function EventItem({ ev, muted }: { ev: WebhookEventResponse; muted: boolean }) {
+function EventItem({ ev, muted, onDelete }: { ev: WebhookEventResponse; muted: boolean; onDelete: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const hasPayload = ev.rawBody !== null && ev.rawBody !== undefined;
   const hasFetched = ev.rawFetched !== null && ev.rawFetched !== undefined;
@@ -112,8 +146,18 @@ function EventItem({ ev, muted }: { ev: WebhookEventResponse; muted: boolean }) 
             {ev.action}
           </span>
         )}
-        <span className="ml-auto text-gray-400">
-          {new Date(ev.receivedAt).toLocaleTimeString()}
+        <span className="ml-auto flex items-center gap-2">
+          <span className="text-gray-400">
+            {new Date(ev.receivedAt).toLocaleTimeString()}
+          </span>
+          <button
+            type="button"
+            title="Delete event"
+            onClick={() => onDelete(ev.id)}
+            className="text-gray-300 hover:text-red-500 transition-colors"
+          >
+            🗑
+          </button>
         </span>
       </div>
       {ev.mpResourceId && (
