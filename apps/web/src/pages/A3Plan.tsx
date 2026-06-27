@@ -1146,54 +1146,60 @@ function SuscripcionesView({
               </div>
             )}
 
-            <AdvancedSection>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Back URL <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="url"
-                  value={subBackUrl}
-                  onChange={(e) => setSubBackUrl(e.target.value)}
-                  placeholder="https://example.com/return"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Start date <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="datetime-local"
-                  value={subStartDate}
-                  onChange={(e) => setSubStartDate(e.target.value)}
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  End date <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="datetime-local"
-                  value={subEndDate}
-                  onChange={(e) => setSubEndDate(e.target.value)}
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reason <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={subReason}
-                  onChange={(e) => setSubReason(e.target.value)}
-                  placeholder="e.g. monthly plan"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </AdvancedSection>
+            {subscribePath === "api" ? (
+              <AdvancedSection>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Back URL <span className="text-gray-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="url"
+                    value={subBackUrl}
+                    onChange={(e) => setSubBackUrl(e.target.value)}
+                    placeholder="https://example.com/return"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Start date <span className="text-gray-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={subStartDate}
+                    onChange={(e) => setSubStartDate(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    End date <span className="text-gray-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={subEndDate}
+                    onChange={(e) => setSubEndDate(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Reason <span className="text-gray-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={subReason}
+                    onChange={(e) => setSubReason(e.target.value)}
+                    placeholder="e.g. monthly plan"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </AdvancedSection>
+            ) : (
+              <p className="text-xs text-gray-400 italic">
+                Advanced overrides (backUrl, startDate, endDate, reason) only apply to the API subscription path.
+              </p>
+            )}
             {subError && (
               <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
                 {subError.message}
