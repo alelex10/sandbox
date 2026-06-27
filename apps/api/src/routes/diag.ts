@@ -210,8 +210,10 @@ diagRouter.get(
         const source2 = `GET /authorized_payments/search?preapproval_id=${sub.mpId}`;
         sources.push(source2);
         try {
+          // NOTE: /authorized_payments/search rejects an explicit `limit`
+          // ("Invalid value for limit"). Omit it and let MP use its default.
           const r = (await mpFetch(
-            `/authorized_payments/search?preapproval_id=${encodeURIComponent(sub.mpId)}&limit=50`,
+            `/authorized_payments/search?preapproval_id=${encodeURIComponent(sub.mpId)}`,
           )) as MpAuthorizedPaymentSearchResponse;
           for (const ap of r.results ?? []) {
             const n = normAuthorizedPayment(ap);
