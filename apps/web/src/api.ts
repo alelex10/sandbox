@@ -13,10 +13,12 @@ import type {
   CreateNoteRequest,
   UpdateNoteRequest,
   NoteResponse,
+  ApiErrorLogResponse,
+  PaymentDiagResponse,
+  PaginationEnvelope,
   RecentPaymentsDiagResponse,
   SubscriptionPaymentsDiagResponse,
   TunnelCheckResponse,
-  ApiErrorLogResponse,
 } from "shared";
 
 import { API_URL as API } from "./config.js";
@@ -72,11 +74,29 @@ async function patch<T>(path: string, body: unknown): Promise<T> {
 // Webhooks
 // ---------------------------------------------------------------------------
 
+/** List webhook events. Returns a `PaginationEnvelope<WebhookEventResponse>`.
+ *  - `method`: filter by method. Special value `"unattributed"` returns events
+ *    where `method` is null or "unknown".
+ *  - `opts.subscriptionId`: only events attributed to this local id.
+ *  - `opts.planId`: only events attributed to any subscription of this plan.
+ *  - `opts.page` / `opts.limit`: server-side pagination. */
 export function listWebhooks(
   method?: SubscriptionMethod | "unattributed",
-): Promise<WebhookEventResponse[]> {
-  const qs = method ? `?method=${encodeURIComponent(method)}` : "";
-  return get<WebhookEventResponse[]>(`/webhooks${qs}`);
+  opts?: {
+    subscriptionId?: string;
+    planId?: string;
+    page?: number;
+    limit?: number;
+  },
+): Promise<PaginationEnvelope<WebhookEventResponse>> {
+  const params = new URLSearchParams();
+  if (method) params.set("method", method);
+  if (opts?.subscriptionId) params.set("subscriptionId", opts.subscriptionId);
+  if (opts?.planId) params.set("planId", opts.planId);
+  if (opts?.page) params.set("page", String(opts.page));
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  return get<PaginationEnvelope<WebhookEventResponse>>(`/webhooks${qs ? `?${qs}` : ""}`);
 }
 
 export function deleteWebhook(id: string): Promise<{ ok: boolean }> {
@@ -95,8 +115,15 @@ export function createA1(body: CreateA1Request): Promise<SubscriptionResponse> {
   return post<SubscriptionResponse>("/a1", body);
 }
 
-export function listA1(): Promise<SubscriptionResponse[]> {
-  return get<SubscriptionResponse[]>("/a1");
+/** List A.1 subscriptions. Returns a `PaginationEnvelope<SubscriptionResponse>`. */
+export function listA1(
+  opts?: { page?: number; limit?: number },
+): Promise<PaginationEnvelope<SubscriptionResponse>> {
+  const params = new URLSearchParams();
+  if (opts?.page) params.set("page", String(opts.page));
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  return get<PaginationEnvelope<SubscriptionResponse>>(`/a1${qs ? `?${qs}` : ""}`);
 }
 
 export function searchA1(id: string): Promise<unknown> {
@@ -115,8 +142,15 @@ export function createA2(body: CreateA2Request): Promise<SubscriptionResponse> {
   return post<SubscriptionResponse>("/a2", body);
 }
 
-export function listA2(): Promise<SubscriptionResponse[]> {
-  return get<SubscriptionResponse[]>("/a2");
+/** List A.2 subscriptions. Returns a `PaginationEnvelope<SubscriptionResponse>`. */
+export function listA2(
+  opts?: { page?: number; limit?: number },
+): Promise<PaginationEnvelope<SubscriptionResponse>> {
+  const params = new URLSearchParams();
+  if (opts?.page) params.set("page", String(opts.page));
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  return get<PaginationEnvelope<SubscriptionResponse>>(`/a2${qs ? `?${qs}` : ""}`);
 }
 
 export function searchA2(id: string): Promise<unknown> {
@@ -164,8 +198,15 @@ export function createPlan(body: CreatePlanRequest): Promise<PlanResponse> {
   return post<PlanResponse>("/a3/plans", body);
 }
 
-export function listA3Plans(): Promise<PlanResponse[]> {
-  return get<PlanResponse[]>("/a3/plans");
+/** List A.3 plans. Returns a `PaginationEnvelope<PlanResponse>`. */
+export function listA3Plans(
+  opts?: { page?: number; limit?: number },
+): Promise<PaginationEnvelope<PlanResponse>> {
+  const params = new URLSearchParams();
+  if (opts?.page) params.set("page", String(opts.page));
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  return get<PaginationEnvelope<PlanResponse>>(`/a3/plans${qs ? `?${qs}` : ""}`);
 }
 
 export function getPlanDetail(id: string): Promise<PlanDetailResponse> {
@@ -180,8 +221,15 @@ export function subscribeToPlan(body: SubscribeToPlanRequest): Promise<Subscribe
   return post<SubscribeResult>("/a3/subscribe", body);
 }
 
-export function listA3(): Promise<SubscriptionResponse[]> {
-  return get<SubscriptionResponse[]>("/a3");
+/** List A.3 subscriptions. Returns a `PaginationEnvelope<SubscriptionResponse>`. */
+export function listA3(
+  opts?: { page?: number; limit?: number },
+): Promise<PaginationEnvelope<SubscriptionResponse>> {
+  const params = new URLSearchParams();
+  if (opts?.page) params.set("page", String(opts.page));
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  return get<PaginationEnvelope<SubscriptionResponse>>(`/a3${qs ? `?${qs}` : ""}`);
 }
 
 export function searchA3(id: string): Promise<unknown> {
@@ -241,12 +289,29 @@ export function chargeNow(body: ChargeOrderRequest): Promise<OrderChargeResponse
   return post<OrderChargeResponse>("/b/charge", body);
 }
 
-export function listB(): Promise<BSubscriptionResponse[]> {
-  return get<BSubscriptionResponse[]>("/b");
+/** List B orders. Returns a `PaginationEnvelope<BSubscriptionResponse>`. */
+export function listB(
+  opts?: { page?: number; limit?: number },
+): Promise<PaginationEnvelope<BSubscriptionResponse>> {
+  const params = new URLSearchParams();
+  if (opts?.page) params.set("page", String(opts.page));
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  return get<PaginationEnvelope<BSubscriptionResponse>>(`/b${qs ? `?${qs}` : ""}`);
 }
 
-export function listCharges(subscriptionId: string): Promise<OrderChargeResponse[]> {
-  return get<OrderChargeResponse[]>(`/b/${encodeURIComponent(subscriptionId)}/charges`);
+/** List charges for a B subscription. Returns a `PaginationEnvelope<OrderChargeResponse>`. */
+export function listCharges(
+  subscriptionId: string,
+  opts?: { page?: number; limit?: number },
+): Promise<PaginationEnvelope<OrderChargeResponse>> {
+  const params = new URLSearchParams();
+  if (opts?.page) params.set("page", String(opts.page));
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  return get<PaginationEnvelope<OrderChargeResponse>>(
+    `/b/${encodeURIComponent(subscriptionId)}/charges${qs ? `?${qs}` : ""}`,
+  );
 }
 
 export function getBDetail(id: string): Promise<SubscriptionDetailResponse> {
@@ -326,8 +391,16 @@ export function getMpConfig(): Promise<MpConfigInfo> {
 // Notes
 // ---------------------------------------------------------------------------
 
-export function listNotes(method: SubscriptionMethod): Promise<NoteResponse[]> {
-  return get<NoteResponse[]>(`/notes?method=${encodeURIComponent(method)}`);
+/** List notes for a method. Returns a `PaginationEnvelope<NoteResponse>`. */
+export function listNotes(
+  method: SubscriptionMethod,
+  opts?: { page?: number; limit?: number },
+): Promise<PaginationEnvelope<NoteResponse>> {
+  const params = new URLSearchParams();
+  params.set("method", method);
+  if (opts?.page) params.set("page", String(opts.page));
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  return get<PaginationEnvelope<NoteResponse>>(`/notes?${params}`);
 }
 
 export function createNote(body: CreateNoteRequest): Promise<NoteResponse> {
@@ -350,16 +423,23 @@ export function deleteNote(id: string): Promise<void> {
 // Diagnostics — MP payments inspector
 // ---------------------------------------------------------------------------
 
-/** Recent payments from MP (global, not subscription-specific). */
+/** Recent payments from MP (global, not subscription-specific).
+ *  NOT paginated on the backend — returns the legacy `{ payments }` shape
+ *  (diag/payments caps internally). The returned type is `PaginationEnvelope`
+ *  for forward-compat with the hook; the backend will return only one page
+ *  of results. */
 export function getRecentPayments(
-  limit = 10,
+  _opts: { page?: number; limit?: number } = {},
 ): Promise<RecentPaymentsDiagResponse> {
-  return get<RecentPaymentsDiagResponse>(
-    `/diag/payments?limit=${encodeURIComponent(limit)}`,
-  );
+  // The backend diag/payments endpoint is not envelope-shaped; it returns
+  // { payments } with a hard internal cap. We keep the original signature so
+  // PaymentsDiag can keep using `result.payments`.
+  return get<RecentPaymentsDiagResponse>(`/diag/payments?limit=10`);
 }
 
-/** All MP payments tied to a local subscription (merged from multiple sources). */
+/** All MP payments tied to a local subscription (merged from multiple sources).
+ *  NOT paginated on the backend — returns the legacy
+ *  `{ payments, sources, errors }` shape. */
 export function getSubscriptionPayments(
   id: string,
 ): Promise<SubscriptionPaymentsDiagResponse> {
@@ -380,15 +460,22 @@ export function checkTunnel(): Promise<TunnelCheckResponse> {
 
 export type { ApiErrorLogResponse };
 
+/** List error log entries. Returns a `PaginationEnvelope<ApiErrorLogResponse>`. */
 export function listErrors(
-  params: { limit?: number; status?: number; path?: string } = {},
-): Promise<ApiErrorLogResponse[]> {
+  params: {
+    page?: number;
+    limit?: number;
+    status?: number;
+    path?: string;
+  } = {},
+): Promise<PaginationEnvelope<ApiErrorLogResponse>> {
   const qs = new URLSearchParams();
+  if (params.page !== undefined) qs.set("page", String(params.page));
   if (params.limit !== undefined) qs.set("limit", String(params.limit));
   if (params.status !== undefined) qs.set("status", String(params.status));
   if (params.path) qs.set("path", params.path);
   const s = qs.toString();
-  return get<ApiErrorLogResponse[]>(`/errors${s ? `?${s}` : ""}`);
+  return get<PaginationEnvelope<ApiErrorLogResponse>>(`/errors${s ? `?${s}` : ""}`);
 }
 
 export function clearErrors(): Promise<{ ok: boolean; count: number }> {
