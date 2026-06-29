@@ -4,6 +4,7 @@ import { createPlan, subscribeToPlan, getA3Subscription, getPlan } from "payment
 import { db } from "../db.js";
 import { mpClient, getMpBackUrl } from "../mp.js";
 import { tryJsonParse } from "../util.js";
+import { paginate, parsePagination } from "../lib/pagination.js";
 
 export const a3Router = Router();
 
@@ -11,29 +12,35 @@ export const a3Router = Router();
 // Plan routes — registered BEFORE generic /:id routes to avoid shadowing
 // ---------------------------------------------------------------------------
 
-// GET /a3/plans — list all Plan rows (parse-on-read for rawCreate)
-a3Router.get("/plans", async (_req: Request, res: Response, next: NextFunction) => {
+// GET /a3/plans — list all Plan rows (parse-on-read for rawCreate, paginated)
+a3Router.get("/plans", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const plans = await db.plan.findMany({
-      where: { deletedAt: null },
-      orderBy: { createdAt: "desc" },
+    const { page, limit } = parsePagination(req.query);
+    const envelope = await paginate(
+      db.plan,
+      {
+        where: { deletedAt: null },
+        orderBy: { createdAt: "desc" },
+      },
+      { page, limit },
+    );
+
+    res.json({
+      ...envelope,
+      items: envelope.items.map((p) => ({
+        id: p.id,
+        mpPlanId: p.mpPlanId,
+        reason: p.reason,
+        amount: p.amount,
+        currency: p.currency,
+        frequency: p.frequency,
+        frequencyType: p.frequencyType,
+        initPoint: p.initPoint,
+        rawCreate: tryJsonParse(p.rawCreate),
+        rawLastSearch: tryJsonParse(p.rawLastSearch),
+        createdAt: p.createdAt.toISOString(),
+      })),
     });
-
-    const result = plans.map((p) => ({
-      id: p.id,
-      mpPlanId: p.mpPlanId,
-      reason: p.reason,
-      amount: p.amount,
-      currency: p.currency,
-      frequency: p.frequency,
-      frequencyType: p.frequencyType,
-      initPoint: p.initPoint,
-      rawCreate: tryJsonParse(p.rawCreate),
-      rawLastSearch: tryJsonParse(p.rawLastSearch),
-      createdAt: p.createdAt.toISOString(),
-    }));
-
-    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -625,37 +632,36 @@ a3Router.get(
   },
 );
 
-// GET /a3/ — list all a3_plan subscriptions with their webhook events
-a3Router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
+// GET /a3/ — list all a3_plan subscriptions (paginated)
+a3Router.get("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const subscriptions = await db.subscription.findMany({
-      where: { method: "a3_plan", deletedAt: null },
-      include: { events: { where: { deletedAt: null }, orderBy: { receivedAt: "desc" } } },
-      orderBy: { createdAt: "desc" },
-    });
+    const { page, limit } = parsePagination(req.query);
+    const envelope = await paginate(
+      db.subscription,
+      {
+        where: { method: "a3_plan", deletedAt: null },
+        orderBy: { createdAt: "desc" },
+      },
+      { page, limit },
+    );
 
-    const result = subscriptions.map((s) => ({
-      id: s.id,
-      method: s.method,
-      mpId: s.mpId,
-      status: s.status,
-      externalReference: s.externalReference,
-      payerEmail: s.payerEmail,
-      preapprovalPlanId: s.preapprovalPlanId,
-      tokenization: s.tokenization,
-      initPoint: s.initPoint,
-      rawCreate: tryJsonParse(s.rawCreate),
-      rawLastSearch: tryJsonParse(s.rawLastSearch),
-      createdAt: s.createdAt.toISOString(),
-      events: s.events.map((ev) => ({
-        ...ev,
-        rawBody: tryJsonParse(ev.rawBody as string | null),
-        rawFetched: tryJsonParse(ev.rawFetched as string | null),
-        receivedAt: ev.receivedAt.toISOString(),
+    res.json({
+      ...envelope,
+      items: envelope.items.map((s) => ({
+        id: s.id,
+        method: s.method,
+        mpId: s.mpId,
+        status: s.status,
+        externalReference: s.externalReference,
+        payerEmail: s.payerEmail,
+        preapprovalPlanId: s.preapprovalPlanId,
+        tokenization: s.tokenization,
+        initPoint: s.initPoint,
+        rawCreate: tryJsonParse(s.rawCreate),
+        rawLastSearch: tryJsonParse(s.rawLastSearch),
+        createdAt: s.createdAt.toISOString(),
       })),
-    }));
-
-    res.json(result);
+    });
   } catch (err) {
     next(err);
   }
