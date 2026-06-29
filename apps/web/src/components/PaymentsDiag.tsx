@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { PaymentDiagResponse } from "shared";
 import { Card } from "./Card.js";
 import { JsonViewer } from "./JsonViewer.js";
+import { Pagination } from "./Pagination.js";
+import { usePaginatedQuery } from "../hooks/usePaginatedQuery.js";
 import { getSubscriptionPayments, getRecentPayments, refundPayment } from "../api.js";
 
 // ---------------------------------------------------------------------------
@@ -165,81 +167,60 @@ interface PaymentsDiagProps {
 }
 
 export function PaymentsDiag({ subscriptionId }: PaymentsDiagProps) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [payments, setPayments] = useState<PaymentDiagResponse[] | null>(null);
-  const [sources, setSources] = useState<string[]>([]);
-  const [diagErrors, setDiagErrors] = useState<string[]>([]);
+  // Bump after a refund to re-fetch the current page from the server.
+  const [refetchToken, setRefetchToken] = useState(0);
 
-  async function handleConsult() {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await getSubscriptionPayments(subscriptionId);
-      setPayments(result.payments);
-      setSources(result.sources ?? []);
-      setDiagErrors(result.errors ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al consultar pagos");
-    } finally {
-      setLoading(false);
-    }
+  const fetcher = useCallback(
+    async (p: { page: number; limit: number }) => {
+      // depend on refetchToken so refunds trigger a re-fetch
+      void refetchToken;
+      return getSubscriptionPayments(subscriptionId, {
+        page: p.page,
+        limit: p.limit,
+      });
+    },
+    [subscriptionId, refetchToken],
+  );
+
+  const {
+    data: payments,
+    page,
+    setPage,
+    total,
+    totalPages,
+    limit,
+    loading,
+    error,
+  } = usePaginatedQuery<PaymentDiagResponse>({ fetcher, defaultLimit: 20 });
+
+  async function handleRefund(): Promise<void> {
+    setRefetchToken((n) => n + 1);
   }
 
   return (
     <Card title="Pagos en MP (status_detail)">
       <div className="space-y-3">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => void handleConsult()}
-            disabled={loading}
-            className="bg-indigo-600 text-white rounded px-4 py-1.5 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {loading ? "Consultando…" : "Consultar pagos"}
-          </button>
-          {payments !== null && !loading && (
-            <span className="text-xs text-gray-400">
-              {payments.length} resultado{payments.length !== 1 ? "s" : ""}
-            </span>
-          )}
-        </div>
-
         {error && (
           <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
             {error}
           </p>
         )}
 
-        {payments !== null && (
-          <PaymentsTable payments={payments} onRefund={handleConsult} />
+        {!loading && !error && payments.length === 0 && (
+          <p className="text-sm text-gray-400 italic py-2">Sin pagos todavía.</p>
         )}
 
-        {sources.length > 0 && (
-          <details className="text-xs text-gray-400 mt-1">
-            <summary className="cursor-pointer select-none hover:text-gray-600">
-              Fuentes consultadas ({sources.length})
-            </summary>
-            <ul className="mt-1 pl-4 space-y-0.5">
-              {sources.map((s) => (
-                <li key={s} className="font-mono">{s}</li>
-              ))}
-            </ul>
-          </details>
+        {payments.length > 0 && (
+          <PaymentsTable payments={payments} onRefund={handleRefund} />
         )}
 
-        {diagErrors.length > 0 && (
-          <details className="text-xs text-orange-500 mt-1">
-            <summary className="cursor-pointer select-none hover:text-orange-700">
-              Errores parciales ({diagErrors.length})
-            </summary>
-            <ul className="mt-1 pl-4 space-y-0.5">
-              {diagErrors.map((e) => (
-                <li key={e} className="font-mono">{e}</li>
-              ))}
-            </ul>
-          </details>
-        )}
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          limit={limit}
+          onPageChange={setPage}
+        />
       </div>
     </Card>
   );
@@ -254,22 +235,34 @@ interface RecentPaymentsPanelProps {
 }
 
 export function RecentPaymentsPanel({ defaultOpen = false }: RecentPaymentsPanelProps) {
-  const [open, setOpen] = useState(defaultOpen);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [payments, setPayments] = useState<PaymentDiagResponse[] | null>(null);
+  // Bump after a refund to re-fetch the current page from the server.
+  const [refetchToken, setRefetchToken] = useState(0);
+  // `defaultOpen` from the prop is honored by hiding the card body until
+  // the user opts in. The previous design used local `open` state; the new
+  // design auto-fetches on mount but lets the consumer collapse the card.
+  const [collapsed, setCollapsed] = useState(!defaultOpen);
 
-  async function handleFetch() {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await getRecentPayments(10);
-      setPayments(result.payments);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al consultar pagos");
-    } finally {
-      setLoading(false);
-    }
+  const fetcher = useCallback(
+    async (p: { page: number; limit: number }) => {
+      void refetchToken;
+      return getRecentPayments({ page: p.page, limit: p.limit });
+    },
+    [refetchToken],
+  );
+
+  const {
+    data: payments,
+    page,
+    setPage,
+    total,
+    totalPages,
+    limit,
+    loading,
+    error,
+  } = usePaginatedQuery<PaymentDiagResponse>({ fetcher, defaultLimit: 10 });
+
+  async function handleRefund(): Promise<void> {
+    setRefetchToken((n) => n + 1);
   }
 
   return (
@@ -278,34 +271,40 @@ export function RecentPaymentsPanel({ defaultOpen = false }: RecentPaymentsPanel
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => {
-              if (!open) {
-                setOpen(true);
-                void handleFetch();
-              } else {
-                void handleFetch();
-              }
-            }}
-            disabled={loading}
-            className="bg-gray-700 text-white rounded px-4 py-1.5 text-sm font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            onClick={() => setCollapsed((v) => !v)}
+            className="text-xs text-gray-500 hover:text-gray-700 font-medium"
           >
-            {loading ? "Consultando…" : "Ver últimos 10 pagos"}
+            {collapsed ? "Mostrar" : "Ocultar"}
           </button>
-          {payments !== null && !loading && (
+          {!collapsed && !loading && (
             <span className="text-xs text-gray-400">
-              {payments.length} resultado{payments.length !== 1 ? "s" : ""}
+              {total} resultado{total !== 1 ? "s" : ""}
             </span>
           )}
         </div>
 
-        {error && (
+        {!collapsed && error && (
           <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
             {error}
           </p>
         )}
 
-        {open && payments !== null && (
-          <PaymentsTable payments={payments} onRefund={handleFetch} />
+        {!collapsed && !loading && !error && payments.length === 0 && (
+          <p className="text-sm text-gray-400 italic py-2">Sin pagos todavía.</p>
+        )}
+
+        {!collapsed && payments.length > 0 && (
+          <PaymentsTable payments={payments} onRefund={handleRefund} />
+        )}
+
+        {!collapsed && (
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            total={total}
+            limit={limit}
+            onPageChange={setPage}
+          />
         )}
       </div>
     </Card>

@@ -16,8 +16,6 @@ import type {
   ApiErrorLogResponse,
   PaymentDiagResponse,
   PaginationEnvelope,
-  RecentPaymentsDiagResponse,
-  SubscriptionPaymentsDiagResponse,
   TunnelCheckResponse,
 } from "shared";
 
@@ -424,25 +422,34 @@ export function deleteNote(id: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /** Recent payments from MP (global, not subscription-specific).
- *  NOT paginated on the backend — returns the legacy `{ payments }` shape
- *  (diag/payments caps internally at 50). The `_limit` arg is accepted for
- *  API compatibility but ignored server-side.
- *  PR5 deviation: not migrated to `usePaginatedQuery` because the backend
- *  `/diag/payments` endpoint is not envelope-shaped. */
+ *  Returns a `PaginationEnvelope<PaymentDiagResponse>`. `?page` + `?limit`
+ *  are forwarded to the backend (defaults: page=1, limit=10; cap 50). */
 export function getRecentPayments(
-  _limit = 10,
-): Promise<RecentPaymentsDiagResponse> {
-  return get<RecentPaymentsDiagResponse>(`/diag/payments?limit=10`);
+  params: { page?: number; limit?: number } = {},
+): Promise<PaginationEnvelope<PaymentDiagResponse>> {
+  const qs = new URLSearchParams();
+  if (params.page) qs.set("page", String(params.page));
+  if (params.limit) qs.set("limit", String(params.limit));
+  const s = qs.toString();
+  return get<PaginationEnvelope<PaymentDiagResponse>>(
+    `/diag/payments${s ? `?${s}` : ""}`,
+  );
 }
 
 /** All MP payments tied to a local subscription (merged from multiple sources).
- *  NOT paginated on the backend — returns the legacy
- *  `{ payments, sources, errors }` shape. */
+ *  Returns a `PaginationEnvelope<PaymentDiagResponse>`. `?page` + `?limit`
+ *  are forwarded to the backend (defaults: page=1, limit=20; cap 100). The
+ *  server merges both MP sources, sorts desc, and slices in-memory. */
 export function getSubscriptionPayments(
   id: string,
-): Promise<SubscriptionPaymentsDiagResponse> {
-  return get<SubscriptionPaymentsDiagResponse>(
-    `/diag/subscriptions/${encodeURIComponent(id)}/payments`,
+  params: { page?: number; limit?: number } = {},
+): Promise<PaginationEnvelope<PaymentDiagResponse>> {
+  const qs = new URLSearchParams();
+  if (params.page) qs.set("page", String(params.page));
+  if (params.limit) qs.set("limit", String(params.limit));
+  const s = qs.toString();
+  return get<PaginationEnvelope<PaymentDiagResponse>>(
+    `/diag/subscriptions/${encodeURIComponent(id)}/payments${s ? `?${s}` : ""}`,
   );
 }
 
