@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { ResponsePanel } from "../components/ResponsePanel.js";
 import { WebhookList } from "../components/WebhookList.js";
 import { TimelineView } from "../components/TimelineView.js";
@@ -11,7 +12,9 @@ import { SubViewToggle } from "../components/SubViewToggle.js";
 import { NotesView } from "../components/NotesView.js";
 import { ThreeColumnLayout } from "../components/ThreeColumnLayout.js";
 import { HistorySidebar } from "../components/HistorySidebar.js";
+import { Pagination } from "../components/Pagination.js";
 import { createA2, searchA2, listA2, getA2Detail, deleteA2, deleteAllA2, cancelSubscription } from "../api.js";
+import { usePaginatedQuery } from "../hooks/usePaginatedQuery.js";
 import { PaymentsDiag } from "../components/PaymentsDiag.js";
 import type { SubscriptionResponse, SubscriptionDetailResponse, Tokenization } from "shared";
 import { MP_PUBLIC_KEY as PUBLIC_KEY } from "../config.js";
@@ -55,6 +58,11 @@ function tomorrow(): string {
 
 
 export function A2Authorized() {
+  const params = useParams<{ id?: string }>();
+  const navigate = useNavigate();
+  // URL is the source of truth for the selected entity.
+  const selectedId = params.id ?? null;
+
   const [subView, setSubView] = useState<SubView>("main");
 
   const [tokenizationMode, setTokenizationMode] = useState<TokenizationMode>("mercadopagojs");
@@ -82,8 +90,7 @@ export function A2Authorized() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [createResult, setCreateResult] = useState<SubscriptionResponse | null>(null);
-  const [history, setHistory] = useState<SubscriptionResponse[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [refetchToken, setRefetchToken] = useState(0);
   const [detail, setDetail] = useState<SubscriptionDetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [searchResult, setSearchResult] = useState<unknown>(null);
@@ -93,18 +100,22 @@ export function A2Authorized() {
   const [deletingAll, setDeletingAll] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
-  const fetchHistory = useCallback(async () => {
-    try {
-      const rows = await listA2();
-      setHistory(rows);
-    } catch {
-      // non-critical
-    }
-  }, []);
+  const fetcher = useCallback(
+    async (p: { page: number; limit: number }) => {
+      void refetchToken;
+      return listA2({ page: p.page, limit: p.limit });
+    },
+    [refetchToken],
+  );
 
-  useEffect(() => {
-    void fetchHistory();
-  }, [fetchHistory]);
+  const {
+    data: history,
+    page,
+    setPage,
+    total,
+    totalPages,
+    limit,
+  } = usePaginatedQuery<SubscriptionResponse>({ fetcher });
 
   const fetchDetail = useCallback(async (id: string) => {
     setDetailLoading(true);
@@ -118,13 +129,27 @@ export function A2Authorized() {
     }
   }, []);
 
+  // Auto-refetch detail when the URL :id changes
+  useEffect(() => {
+    if (selectedId) {
+      void fetchDetail(selectedId);
+      setDetail(null);
+      setSearchResult(null);
+      setSearchMpId("");
+      setSearchError(null);
+    } else {
+      setDetail(null);
+      setSearchResult(null);
+    }
+  }, [selectedId, fetchDetail]);
+
   async function handleDelete(id: string) {
     if (!window.confirm("¿Eliminar este registro del historial? (borrado lógico, los datos se conservan)")) return;
     try {
       await deleteA2(id);
-      await fetchHistory();
+      setRefetchToken((n) => n + 1);
       if (selectedId === id) {
-        setSelectedId(null);
+        navigate("/a2");
         setDetail(null);
         setSearchResult(null);
       }
@@ -139,8 +164,8 @@ export function A2Authorized() {
     setDeletingAll(true);
     try {
       await deleteAllA2();
-      await fetchHistory();
-      setSelectedId(null);
+      setRefetchToken((n) => n + 1);
+      navigate("/a2");
       setDetail(null);
       setSearchResult(null);
     } catch (err) {
@@ -151,13 +176,7 @@ export function A2Authorized() {
   }
 
   function selectSubscription(id: string) {
-    // H2: removed early-return so re-clicking always refetches the detail
-    setSelectedId(id);
-    setDetail(null);
-    setSearchResult(null);
-    setSearchMpId("");
-    setSearchError(null);
-    void fetchDetail(id);
+    navigate(`/a2/${encodeURIComponent(id)}`);
   }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
@@ -214,9 +233,8 @@ export function A2Authorized() {
       setCreateResult(result);
       setCardTokenId(null);
       setTokenSource(null);
-      await fetchHistory();
-      setSelectedId(result.id);
-      void fetchDetail(result.id);
+      setRefetchToken((n) => n + 1);
+      navigate(`/a2/${encodeURIComponent(result.id)}`);
     } catch (err) {
       setError(err instanceof Error ? err : new Error("Request failed"));
     } finally {
@@ -249,7 +267,7 @@ export function A2Authorized() {
     setCancelling(true);
     try {
       await cancelSubscription(selectedId);
-      await fetchHistory();
+      setRefetchToken((n) => n + 1);
       void fetchDetail(selectedId);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "No se pudo cancelar");
@@ -274,7 +292,13 @@ export function A2Authorized() {
       <div className="mb-6">
         <SubViewToggle
           value={subView}
-          onChange={setSubView}
+          onChange={(v) => {
+            if (v === "notas") {
+              navigate("/notes?method=a2_authorized");
+            } else {
+              setSubView(v);
+            }
+          }}
           opts={[
             { key: "main", label: "Suscripciones" },
             { key: "notas", label: "Notas" },
@@ -295,6 +319,15 @@ export function A2Authorized() {
               getId={(s) => s.id}
               onDelete={handleDelete}
               onClearAll={handleClearAll}
+              footer={
+                <Pagination
+                  page={page}
+                  totalPages={totalPages}
+                  total={total}
+                  limit={limit}
+                  onPageChange={setPage}
+                />
+              }
               renderItem={(sub) => (
                 <>
                   <div className="font-mono text-gray-700 truncate">{sub.id.slice(0, 16)}…</div>
@@ -664,7 +697,6 @@ export function A2Authorized() {
                   {selectedId
                     ? `Live feed for subscription ${selectedId.slice(0, 8)}…`
                     : "Method-level feed including unattributed events."}
-                  <span className="text-gray-400"> (polling every 5s)</span>
                 </p>
                 <WebhookList method="a2_authorized" subscriptionId={selectedId ?? undefined} />
               </Card>

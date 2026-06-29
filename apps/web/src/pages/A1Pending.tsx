@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { ResponsePanel } from "../components/ResponsePanel.js";
 import { WebhookList } from "../components/WebhookList.js";
 import { TimelineView } from "../components/TimelineView.js";
@@ -9,7 +10,9 @@ import { SubViewToggle } from "../components/SubViewToggle.js";
 import { NotesView } from "../components/NotesView.js";
 import { ThreeColumnLayout } from "../components/ThreeColumnLayout.js";
 import { HistorySidebar } from "../components/HistorySidebar.js";
+import { Pagination } from "../components/Pagination.js";
 import { createA1, searchA1, listA1, getA1Detail, deleteA1, deleteAllA1, cancelSubscription } from "../api.js";
+import { usePaginatedQuery } from "../hooks/usePaginatedQuery.js";
 import { PaymentsDiag } from "../components/PaymentsDiag.js";
 import type { SubscriptionResponse, SubscriptionDetailResponse } from "shared";
 
@@ -51,6 +54,12 @@ function tomorrow(): string {
 
 
 export function A1Pending() {
+  const params = useParams<{ id?: string }>();
+  const navigate = useNavigate();
+  // URL is the source of truth for the selected entity. A null URL param
+  // (i.e., we're on /a1) means nothing is selected.
+  const selectedId = params.id ?? null;
+
   const [subView, setSubView] = useState<SubView>("main");
 
   const [form, setForm] = useState<FormState>({
@@ -74,8 +83,7 @@ export function A1Pending() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [createResult, setCreateResult] = useState<SubscriptionResponse | null>(null);
-  const [history, setHistory] = useState<SubscriptionResponse[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [refetchToken, setRefetchToken] = useState(0);
   const [detail, setDetail] = useState<SubscriptionDetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [searchResult, setSearchResult] = useState<unknown>(null);
@@ -85,18 +93,22 @@ export function A1Pending() {
   const [deletingAll, setDeletingAll] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
-  const fetchHistory = useCallback(async () => {
-    try {
-      const rows = await listA1();
-      setHistory(rows);
-    } catch {
-      // non-critical
-    }
-  }, []);
+  const fetcher = useCallback(
+    async (p: { page: number; limit: number }) => {
+      void refetchToken;
+      return listA1({ page: p.page, limit: p.limit });
+    },
+    [refetchToken],
+  );
 
-  useEffect(() => {
-    void fetchHistory();
-  }, [fetchHistory]);
+  const {
+    data: history,
+    page,
+    setPage,
+    total,
+    totalPages,
+    limit,
+  } = usePaginatedQuery<SubscriptionResponse>({ fetcher });
 
   const fetchDetail = useCallback(async (id: string) => {
     setDetailLoading(true);
@@ -110,13 +122,27 @@ export function A1Pending() {
     }
   }, []);
 
+  // Auto-refetch detail when the URL :id changes
+  useEffect(() => {
+    if (selectedId) {
+      void fetchDetail(selectedId);
+      setDetail(null);
+      setSearchResult(null);
+      setSearchMpId("");
+      setSearchError(null);
+    } else {
+      setDetail(null);
+      setSearchResult(null);
+    }
+  }, [selectedId, fetchDetail]);
+
   async function handleDelete(id: string) {
     if (!window.confirm("¿Eliminar este registro del historial? (borrado lógico, los datos se conservan)")) return;
     try {
       await deleteA1(id);
-      await fetchHistory();
+      setRefetchToken((n) => n + 1);
       if (selectedId === id) {
-        setSelectedId(null);
+        navigate("/a1");
         setDetail(null);
         setSearchResult(null);
       }
@@ -131,8 +157,8 @@ export function A1Pending() {
     setDeletingAll(true);
     try {
       await deleteAllA1();
-      await fetchHistory();
-      setSelectedId(null);
+      setRefetchToken((n) => n + 1);
+      navigate("/a1");
       setDetail(null);
       setSearchResult(null);
     } catch (err) {
@@ -144,12 +170,7 @@ export function A1Pending() {
 
   function selectSubscription(id: string) {
     // H2: removed early-return so re-clicking always refetches the detail
-    setSelectedId(id);
-    setDetail(null);
-    setSearchResult(null);
-    setSearchMpId("");
-    setSearchError(null);
-    void fetchDetail(id);
+    navigate(`/a1/${encodeURIComponent(id)}`);
   }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
@@ -192,10 +213,9 @@ export function A1Pending() {
       if (form.backUrl) payload.backUrl = form.backUrl;
       const result = await createA1(payload);
       setCreateResult(result);
-      await fetchHistory();
+      setRefetchToken((n) => n + 1);
       // Auto-select newly created subscription
-      setSelectedId(result.id);
-      void fetchDetail(result.id);
+      navigate(`/a1/${encodeURIComponent(result.id)}`);
     } catch (err) {
       setError(err instanceof Error ? err : new Error("Request failed"));
     } finally {
@@ -229,7 +249,7 @@ export function A1Pending() {
     setCancelling(true);
     try {
       await cancelSubscription(selectedId);
-      await fetchHistory();
+      setRefetchToken((n) => n + 1);
       void fetchDetail(selectedId);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "No se pudo cancelar");
@@ -261,7 +281,13 @@ export function A1Pending() {
       <div className="mb-6">
         <SubViewToggle
           value={subView}
-          onChange={setSubView}
+          onChange={(v) => {
+            if (v === "notas") {
+              navigate("/notes?method=a1_pending");
+            } else {
+              setSubView(v);
+            }
+          }}
           opts={[
             { key: "main", label: "Suscripciones" },
             { key: "notas", label: "Notas" },
@@ -282,6 +308,15 @@ export function A1Pending() {
               getId={(s) => s.id}
               onDelete={handleDelete}
               onClearAll={handleClearAll}
+              footer={
+                <Pagination
+                  page={page}
+                  totalPages={totalPages}
+                  total={total}
+                  limit={limit}
+                  onPageChange={setPage}
+                />
+              }
               renderItem={(sub) => (
                 <>
                   <div className="font-mono text-gray-700 truncate">{sub.id.slice(0, 16)}…</div>
@@ -605,7 +640,6 @@ export function A1Pending() {
                   {selectedId
                     ? `Live feed for subscription ${selectedId.slice(0, 8)}…`
                     : "Method-level feed including unattributed events. Per-subscription webhooks also appear in the Timeline above."}
-                  <span className="text-gray-400"> (polling every 5s)</span>
                 </p>
                 <WebhookList method="a1_pending" subscriptionId={selectedId ?? undefined} />
               </Card>

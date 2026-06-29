@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { ResponsePanel } from "../components/ResponsePanel.js";
 import { WebhookList } from "../components/WebhookList.js";
 import { TimelineView } from "../components/TimelineView.js";
@@ -11,6 +12,7 @@ import { SubViewToggle } from "../components/SubViewToggle.js";
 import { NotesView } from "../components/NotesView.js";
 import { ThreeColumnLayout } from "../components/ThreeColumnLayout.js";
 import { HistorySidebar } from "../components/HistorySidebar.js";
+import { Pagination } from "../components/Pagination.js";
 import {
   createPlan,
   listA3Plans,
@@ -38,8 +40,9 @@ import type {
 } from "shared";
 import { MP_PUBLIC_KEY as PUBLIC_KEY } from "../config.js";
 import { PaymentsDiag } from "../components/PaymentsDiag.js";
+import { usePaginatedQuery } from "../hooks/usePaginatedQuery.js";
 
-type SubView = "planes" | "suscripciones" | "notas";
+type SubViewKey = "planes" | "suscripciones" | "notas";
 type TokenizationMode = "mercadopagojs" | "brick";
 type SubscribePath = "redirect" | "api";
 
@@ -113,18 +116,33 @@ function PlanPicker({
 }
 
 // ---------------------------------------------------------------------------
-// Plans sub-view (master-detail)
+// Plans sub-view (master-detail) — URL-driven via /a3/plans/:planId
 // ---------------------------------------------------------------------------
+
+interface PlanesViewProps {
+  plans: PlanResponse[];
+  onPlansRefresh: () => void;
+  page: number;
+  totalPages: number;
+  total: number;
+  limit: number;
+  onPageChange: (p: number) => void;
+}
 
 function PlanesView({
   plans,
   onPlansRefresh,
-}: {
-  plans: PlanResponse[];
-  onPlansRefresh: () => Promise<void>;
-}) {
-  // Master selection
-  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  page,
+  totalPages,
+  total,
+  limit,
+  onPageChange,
+}: PlanesViewProps) {
+  const params = useParams<{ planId?: string }>();
+  const navigate = useNavigate();
+  // URL is the source of truth.
+  const selectedPlanId = params.planId ?? null;
+
   const [planDetail, setPlanDetail] = useState<PlanDetailResponse | null>(null);
   const [planDetailLoading, setPlanDetailLoading] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
@@ -170,13 +188,25 @@ function PlanesView({
     }
   }, []);
 
+  // Auto-refetch detail when the URL :planId changes
+  useEffect(() => {
+    if (selectedPlanId) {
+      void fetchPlanDetail(selectedPlanId);
+      setMpSearchResult(null);
+      setMpSearchError(null);
+    } else {
+      setPlanDetail(null);
+      setMpSearchResult(null);
+    }
+  }, [selectedPlanId, fetchPlanDetail]);
+
   async function handleDeletePlan(id: string) {
     if (!window.confirm("¿Eliminar este registro del historial? (borrado lógico, los datos se conservan)")) return;
     try {
       await deletePlan(id);
-      await onPlansRefresh();
+      onPlansRefresh();
       if (selectedPlanId === id) {
-        setSelectedPlanId(null);
+        navigate("/a3/plans");
         setPlanDetail(null);
         setMpSearchResult(null);
         setMpSearchError(null);
@@ -193,8 +223,8 @@ function PlanesView({
     setDeletingAll(true);
     try {
       await deleteAllPlans();
-      await onPlansRefresh();
-      setSelectedPlanId(null);
+      onPlansRefresh();
+      navigate("/a3/plans");
       setPlanDetail(null);
       setMpSearchResult(null);
       setMpSearchError(null);
@@ -207,10 +237,7 @@ function PlanesView({
   }
 
   function selectPlan(id: string) {
-    setSelectedPlanId(id);
-    setMpSearchResult(null);
-    setMpSearchError(null);
-    void fetchPlanDetail(id);
+    navigate(`/a3/plans/${encodeURIComponent(id)}`);
   }
 
   async function handleCreatePlan(e: React.FormEvent) {
@@ -258,8 +285,7 @@ function PlanesView({
       setPlanResult(created);
       onPlansRefresh();
       // Auto-select the newly created plan
-      setSelectedPlanId(created.id);
-      void fetchPlanDetail(created.id);
+      navigate(`/a3/plans/${encodeURIComponent(created.id)}`);
     } catch (err) {
       setPlanError(err instanceof Error ? err : new Error("Request failed"));
     } finally {
@@ -297,6 +323,15 @@ function PlanesView({
           getId={(p) => p.id}
           onDelete={handleDeletePlan}
           onClearAll={handleClearAll}
+          footer={
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              total={total}
+              limit={limit}
+              onPageChange={onPageChange}
+            />
+          }
           renderItem={(p) => (
             <>
               <div className="font-mono text-gray-700 truncate">{p.id.slice(0, 16)}…</div>
@@ -696,7 +731,6 @@ function PlanesView({
               {selectedPlanId
                 ? "Live feed for all subscriptions of this plan."
                 : "Method-level feed including unattributed events."}
-              <span className="text-gray-400"> (polling every 5s)</span>
             </p>
             <WebhookList method="a3_plan" planId={selectedPlanId ?? undefined} />
           </Card>
@@ -707,19 +741,34 @@ function PlanesView({
 }
 
 // ---------------------------------------------------------------------------
-// Suscripciones sub-view (unchanged behavior from original A3Plan)
+// Suscripciones sub-view — URL-driven via /a3/subs/:subId
 // ---------------------------------------------------------------------------
+
+interface SuscripcionesViewProps {
+  plans: PlanResponse[];
+  subscriptions: SubscriptionResponse[];
+  onSubscriptionsRefresh: () => void;
+  page: number;
+  totalPages: number;
+  total: number;
+  limit: number;
+  onPageChange: (p: number) => void;
+}
 
 function SuscripcionesView({
   plans,
   subscriptions,
   onSubscriptionsRefresh,
-}: {
-  plans: PlanResponse[];
-  subscriptions: SubscriptionResponse[];
-  onSubscriptionsRefresh: () => Promise<void>;
-}) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  page,
+  totalPages,
+  total,
+  limit,
+  onPageChange,
+}: SuscripcionesViewProps) {
+  const params = useParams<{ subId?: string }>();
+  const navigate = useNavigate();
+  const selectedId = params.subId ?? null;
+
   const [detail, setDetail] = useState<SubscriptionDetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
@@ -770,13 +819,26 @@ function SuscripcionesView({
     }
   }, []);
 
+  useEffect(() => {
+    if (selectedId) {
+      void fetchDetail(selectedId);
+      setDetail(null);
+      setSearchResult(null);
+      setSearchMpId("");
+      setSearchError(null);
+    } else {
+      setDetail(null);
+      setSearchResult(null);
+    }
+  }, [selectedId, fetchDetail]);
+
   async function handleDeleteSub(id: string) {
     if (!window.confirm("¿Eliminar este registro del historial? (borrado lógico, los datos se conservan)")) return;
     try {
       await deleteA3(id);
-      await onSubscriptionsRefresh();
+      onSubscriptionsRefresh();
       if (selectedId === id) {
-        setSelectedId(null);
+        navigate("/a3/subs");
         setDetail(null);
         setSearchResult(null);
       }
@@ -791,8 +853,8 @@ function SuscripcionesView({
     setDeletingAll(true);
     try {
       await deleteAllA3();
-      await onSubscriptionsRefresh();
-      setSelectedId(null);
+      onSubscriptionsRefresh();
+      navigate("/a3/subs");
       setDetail(null);
       setSearchResult(null);
     } catch (err) {
@@ -803,12 +865,7 @@ function SuscripcionesView({
   }
 
   function selectSubscription(id: string) {
-    setSelectedId(id);
-    setDetail(null);
-    setSearchResult(null);
-    setSearchMpId("");
-    setSearchError(null);
-    void fetchDetail(id);
+    navigate(`/a3/subs/${encodeURIComponent(id)}`);
   }
 
   async function handleSubscribe(e: React.FormEvent) {
@@ -865,8 +922,7 @@ function SuscripcionesView({
       setCardTokenId(null);
       setTokenSource(null);
       onSubscriptionsRefresh();
-      setSelectedId(res.id);
-      void fetchDetail(res.id);
+      navigate(`/a3/subs/${encodeURIComponent(res.id)}`);
     } catch (err) {
       setSubError(err instanceof Error ? err : new Error("Request failed"));
     } finally {
@@ -913,7 +969,7 @@ function SuscripcionesView({
     setCancelling(true);
     try {
       await cancelSubscription(selectedId);
-      await onSubscriptionsRefresh();
+      onSubscriptionsRefresh();
       void fetchDetail(selectedId);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "No se pudo cancelar");
@@ -935,6 +991,15 @@ function SuscripcionesView({
           getId={(s) => s.id}
           onDelete={handleDeleteSub}
           onClearAll={handleClearAll}
+          footer={
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              total={total}
+              limit={limit}
+              onPageChange={onPageChange}
+            />
+          }
           renderItem={(sub) => (
             <>
               <div className="font-mono text-gray-700 truncate">{sub.id.slice(0, 16)}…</div>
@@ -1444,7 +1509,6 @@ function SuscripcionesView({
               {selectedId
                 ? `Live feed for subscription ${selectedId.slice(0, 8)}…`
                 : "Method-level feed including unattributed events."}
-              <span className="text-gray-400"> (polling every 5s)</span>
             </p>
             <WebhookList method="a3_plan" subscriptionId={selectedId ?? undefined} />
           </Card>
@@ -1455,43 +1519,74 @@ function SuscripcionesView({
 }
 
 // ---------------------------------------------------------------------------
-// A3Plan page — root with sub-view toggle
+// A3Plan page — root, URL-driven sub-view via /a3/plans and /a3/subs
 // ---------------------------------------------------------------------------
 
 export function A3Plan({ section }: { section?: "plans" | "subs" } = {}) {
-  // Map router-driven `section` to the internal `SubView` so the URL drives
-  // which sub-view opens by default. The user can still toggle freely with
-  // the SubViewToggle — making the toggle URL-aware lands in PR5.
-  const initialSubView: SubView = section === "subs" ? "suscripciones" : "planes";
-  const [subView, setSubView] = useState<SubView>(initialSubView);
-  useEffect(() => {
-    setSubView(initialSubView);
-  }, [section]);
+  // The router gives us `section` via App.tsx route table (/a3/plans vs /a3/subs).
+  // We also support a /a3 redirect landing on /a3/subs.
+  const navigate = useNavigate();
+
+  // If the router hands us a section prop but the URL is /a3 (no sub-path),
+  // normalize. (App.tsx redirects /a3 → /a3/subs so this is a defensive default.)
+  const initialSubView: SubViewKey = section === "plans" ? "planes" : "suscripciones";
+  const [subView, setSubView] = useState<SubViewKey>(initialSubView);
+
   const [plans, setPlans] = useState<PlanResponse[]>([]);
   const [subscriptions, setSubscriptions] = useState<SubscriptionResponse[]>([]);
+  const [plansRefetchToken, setPlansRefetchToken] = useState(0);
+  const [subsRefetchToken, setSubsRefetchToken] = useState(0);
 
-  const fetchPlans = useCallback(async () => {
-    try {
-      const rows = await listA3Plans();
-      setPlans(rows);
-    } catch {
-      // non-critical
-    }
-  }, []);
+  const plansFetcher = useCallback(
+    async (p: { page: number; limit: number }) => {
+      void plansRefetchToken;
+      return listA3Plans({ page: p.page, limit: p.limit });
+    },
+    [plansRefetchToken],
+  );
+  const {
+    data: plansData,
+    page: plansPage,
+    setPage: setPlansPage,
+    total: plansTotal,
+    totalPages: plansTotalPages,
+    limit: plansLimit,
+  } = usePaginatedQuery<PlanResponse>({ fetcher: plansFetcher });
 
-  const fetchSubscriptions = useCallback(async () => {
-    try {
-      const rows = await listA3();
-      setSubscriptions(rows);
-    } catch {
-      // non-critical
-    }
-  }, []);
+  // Keep local plans list in sync with the paginated data (PlanesView renders
+  // from this list so it can pick out the selected plan by id).
+  useEffect(() => {
+    setPlans(plansData);
+  }, [plansData]);
+
+  const subsFetcher = useCallback(
+    async (p: { page: number; limit: number }) => {
+      void subsRefetchToken;
+      return listA3({ page: p.page, limit: p.limit });
+    },
+    [subsRefetchToken],
+  );
+  const {
+    data: subsData,
+    page: subsPage,
+    setPage: setSubsPage,
+    total: subsTotal,
+    totalPages: subsTotalPages,
+    limit: subsLimit,
+  } = usePaginatedQuery<SubscriptionResponse>({ fetcher: subsFetcher });
 
   useEffect(() => {
-    void fetchPlans();
-    void fetchSubscriptions();
-  }, [fetchPlans, fetchSubscriptions]);
+    setSubscriptions(subsData);
+  }, [subsData]);
+
+  // PR4 deviation #3: SubViewToggle is now URL-aware. Clicking a tab
+  // navigates instead of mutating local state.
+  function handleSubViewChange(next: SubViewKey) {
+    setSubView(next);
+    if (next === "planes") navigate("/a3/plans");
+    else if (next === "suscripciones") navigate("/a3/subs");
+    else navigate("/notes?method=a3_plan");
+  }
 
   return (
     <div>
@@ -1503,11 +1598,11 @@ export function A3Plan({ section }: { section?: "plans" | "subs" } = {}) {
         </p>
       </div>
 
-      {/* Sub-view toggle */}
+      {/* Sub-view toggle — URL-aware (PR4 deviation #3) */}
       <div className="mb-6">
         <SubViewToggle
           value={subView}
-          onChange={setSubView}
+          onChange={handleSubViewChange}
           opts={[
             { key: "planes", label: "Planes" },
             { key: "suscripciones", label: "Suscripciones" },
@@ -1517,12 +1612,25 @@ export function A3Plan({ section }: { section?: "plans" | "subs" } = {}) {
       </div>
 
       {subView === "planes" ? (
-        <PlanesView plans={plans} onPlansRefresh={fetchPlans} />
+        <PlanesView
+          plans={plans}
+          onPlansRefresh={() => setPlansRefetchToken((n) => n + 1)}
+          page={plansPage}
+          totalPages={plansTotalPages}
+          total={plansTotal}
+          limit={plansLimit}
+          onPageChange={setPlansPage}
+        />
       ) : subView === "suscripciones" ? (
         <SuscripcionesView
           plans={plans}
           subscriptions={subscriptions}
-          onSubscriptionsRefresh={fetchSubscriptions}
+          onSubscriptionsRefresh={() => setSubsRefetchToken((n) => n + 1)}
+          page={subsPage}
+          totalPages={subsTotalPages}
+          total={subsTotal}
+          limit={subsLimit}
+          onPageChange={setSubsPage}
         />
       ) : (
         <NotesView method="a3_plan" />

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { ResponsePanel } from "../components/ResponsePanel.js";
 import { WebhookList } from "../components/WebhookList.js";
 import { TimelineView } from "../components/TimelineView.js";
@@ -11,6 +12,7 @@ import { SubViewToggle } from "../components/SubViewToggle.js";
 import { NotesView } from "../components/NotesView.js";
 import { ThreeColumnLayout } from "../components/ThreeColumnLayout.js";
 import { HistorySidebar } from "../components/HistorySidebar.js";
+import { Pagination } from "../components/Pagination.js";
 import {
   createProfile,
   chargeNow,
@@ -19,6 +21,7 @@ import {
   deleteB,
   deleteAllB,
 } from "../api.js";
+import { usePaginatedQuery } from "../hooks/usePaginatedQuery.js";
 import { PaymentsDiag, RecentPaymentsPanel } from "../components/PaymentsDiag.js";
 import type {
   BSubscriptionResponse,
@@ -525,26 +528,33 @@ function ChargeSection({
 // ---------------------------------------------------------------------------
 
 export function BOrders() {
+  const params = useParams<{ id?: string }>();
+  const navigate = useNavigate();
+  const selectedId = params.id ?? null;
+
   const [subView, setSubView] = useState<SubView>("main");
 
-  const [subscriptions, setSubscriptions] = useState<BSubscriptionResponse[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [refetchToken, setRefetchToken] = useState(0);
   const [detail, setDetail] = useState<SubscriptionDetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
 
-  const fetchSubscriptions = useCallback(async () => {
-    try {
-      const rows = await listB();
-      setSubscriptions(rows);
-    } catch {
-      // non-critical
-    }
-  }, []);
+  const fetcher = useCallback(
+    async (p: { page: number; limit: number }) => {
+      void refetchToken;
+      return listB({ page: p.page, limit: p.limit });
+    },
+    [refetchToken],
+  );
 
-  useEffect(() => {
-    void fetchSubscriptions();
-  }, [fetchSubscriptions]);
+  const {
+    data: subscriptions,
+    page,
+    setPage,
+    total,
+    totalPages,
+    limit,
+  } = usePaginatedQuery<BSubscriptionResponse>({ fetcher });
 
   const fetchDetail = useCallback(async (id: string) => {
     setDetailLoading(true);
@@ -558,13 +568,22 @@ export function BOrders() {
     }
   }, []);
 
+  useEffect(() => {
+    if (selectedId) {
+      void fetchDetail(selectedId);
+      setDetail(null);
+    } else {
+      setDetail(null);
+    }
+  }, [selectedId, fetchDetail]);
+
   async function handleDelete(id: string) {
     if (!window.confirm("¿Eliminar este registro del historial? (borrado lógico, los datos se conservan)")) return;
     try {
       await deleteB(id);
-      await fetchSubscriptions();
+      setRefetchToken((n) => n + 1);
       if (selectedId === id) {
-        setSelectedId(null);
+        navigate("/b");
         setDetail(null);
       }
     } catch (err) {
@@ -578,8 +597,8 @@ export function BOrders() {
     setDeletingAll(true);
     try {
       await deleteAllB();
-      await fetchSubscriptions();
-      setSelectedId(null);
+      setRefetchToken((n) => n + 1);
+      navigate("/b");
       setDetail(null);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
@@ -589,22 +608,17 @@ export function BOrders() {
   }
 
   function selectSubscription(id: string) {
-    // H2: removed early-return so re-clicking always refetches the detail
-    setSelectedId(id);
-    setDetail(null);
-    void fetchDetail(id);
+    navigate(`/b/${encodeURIComponent(id)}`);
   }
 
   // L2: after profile creation, refresh list and auto-select the new subscription
   function handleProfileCreated(newId: string) {
-    void fetchSubscriptions();
-    setSelectedId(newId);
-    setDetail(null);
-    void fetchDetail(newId);
+    setRefetchToken((n) => n + 1);
+    navigate(`/b/${encodeURIComponent(newId)}`);
   }
 
   function handleCharged() {
-    void fetchSubscriptions();
+    setRefetchToken((n) => n + 1);
     if (selectedId) void fetchDetail(selectedId);
   }
 
@@ -624,7 +638,13 @@ export function BOrders() {
       <div className="mb-6">
         <SubViewToggle
           value={subView}
-          onChange={setSubView}
+          onChange={(v) => {
+            if (v === "notas") {
+              navigate("/notes?method=b_orders");
+            } else {
+              setSubView(v);
+            }
+          }}
           opts={[
             { key: "main", label: "Pagos" },
             { key: "notas", label: "Notas" },
@@ -645,6 +665,15 @@ export function BOrders() {
               getId={(s) => s.id}
               onDelete={handleDelete}
               onClearAll={handleClearAll}
+              footer={
+                <Pagination
+                  page={page}
+                  totalPages={totalPages}
+                  total={total}
+                  limit={limit}
+                  onPageChange={setPage}
+                />
+              }
               renderItem={(sub) => (
                 <>
                   <div className="font-mono text-gray-700 truncate">{sub.id.slice(0, 16)}…</div>
@@ -752,7 +781,6 @@ export function BOrders() {
                   {selectedId
                     ? `Live feed for subscription ${selectedId.slice(0, 8)}…`
                     : "Method-level feed including unattributed events."}
-                  <span className="text-gray-400"> (polling every 5s)</span>
                 </p>
                 <WebhookList method="b_orders" subscriptionId={selectedId ?? undefined} />
               </Card>
