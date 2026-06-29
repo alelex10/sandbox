@@ -267,7 +267,7 @@ a1Router.get(
             fetched: tryJsonParse(ev.rawFetched as string | null),
           },
         })),
-      ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+      ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 
       res.json({
         id: subscription.id,
