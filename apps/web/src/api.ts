@@ -425,15 +425,13 @@ export function deleteNote(id: string): Promise<void> {
 
 /** Recent payments from MP (global, not subscription-specific).
  *  NOT paginated on the backend — returns the legacy `{ payments }` shape
- *  (diag/payments caps internally). The returned type is `PaginationEnvelope`
- *  for forward-compat with the hook; the backend will return only one page
- *  of results. */
+ *  (diag/payments caps internally at 50). The `_limit` arg is accepted for
+ *  API compatibility but ignored server-side.
+ *  PR5 deviation: not migrated to `usePaginatedQuery` because the backend
+ *  `/diag/payments` endpoint is not envelope-shaped. */
 export function getRecentPayments(
-  _opts: { page?: number; limit?: number } = {},
+  _limit = 10,
 ): Promise<RecentPaymentsDiagResponse> {
-  // The backend diag/payments endpoint is not envelope-shaped; it returns
-  // { payments } with a hard internal cap. We keep the original signature so
-  // PaymentsDiag can keep using `result.payments`.
   return get<RecentPaymentsDiagResponse>(`/diag/payments?limit=10`);
 }
 
