@@ -4,6 +4,7 @@ import { listWebhooks, deleteWebhook, clearWebhooks } from "../api.js";
 import { JsonViewer } from "./JsonViewer.js";
 import { Pagination } from "./Pagination.js";
 import { usePaginatedQuery } from "../hooks/usePaginatedQuery.js";
+import { useSetting } from "../hooks/useSettings.js";
 
 interface WebhookListProps {
   method: SubscriptionMethod;
@@ -13,8 +14,6 @@ interface WebhookListProps {
   planId?: string;
 }
 
-const WEBHOOKS_DEFAULT_LIMIT = 50;
-
 export function WebhookList({
   method,
   subscriptionId,
@@ -23,6 +22,10 @@ export function WebhookList({
   // Unclassified (no method) events can never be linked to a specific
   // subscription/plan, so we only fetch them when no scope filter is active.
   const scoped = Boolean(subscriptionId || planId);
+
+  // The user-controlled page-size setting. The "Show N per page" select in
+  // `<Pagination>` writes back through this setter.
+  const [, setDefaultLimit] = useSetting<number>("pagination.defaultLimit");
 
   // Bumping this refetchToken re-runs the usePaginatedQuery fetcher (which
   // depends on it via the wrapper). Used after mutating deletes/clear.
@@ -46,7 +49,6 @@ export function WebhookList({
 
   const scopedQuery = usePaginatedQuery<WebhookEventResponse>({
     fetcher: scopedFetcher,
-    defaultLimit: WEBHOOKS_DEFAULT_LIMIT,
   });
 
   // Unattributed fetcher: only when not scoped (per the comment above).
@@ -62,7 +64,6 @@ export function WebhookList({
 
   const unattributedQuery = usePaginatedQuery<WebhookEventResponse>({
     fetcher: unattributedFetcher,
-    defaultLimit: WEBHOOKS_DEFAULT_LIMIT,
   });
 
   const attributed = scopedQuery.data.filter((e) => e.method !== null);
@@ -125,6 +126,7 @@ export function WebhookList({
             total={scopedQuery.total}
             limit={scopedQuery.limit}
             onPageChange={scopedQuery.setPage}
+            onLimitChange={setDefaultLimit}
           />
         </div>
       )}
@@ -141,6 +143,7 @@ export function WebhookList({
             total={unattributedQuery.total}
             limit={unattributedQuery.limit}
             onPageChange={unattributedQuery.setPage}
+            onLimitChange={setDefaultLimit}
           />
         </div>
       )}

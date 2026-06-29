@@ -12,6 +12,12 @@ interface PaginationProps {
   total: number;
   limit: number;
   onPageChange: (p: number) => void;
+  /**
+   * When provided, renders a "Show N per page" `<select>` that calls this
+   * callback on change. When omitted, no selector is rendered (backward-
+   * compatible for list views that don't want a per-list page-size picker).
+   */
+  onLimitChange?: (n: number) => void;
 }
 
 /**
@@ -44,7 +50,7 @@ function pageButtonClass(isActive: boolean, isDisabled: boolean): string {
   return `${base} border-gray-200 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-300`;
 }
 
-export function Pagination({ page, totalPages, total, limit, onPageChange }: PaginationProps) {
+export function Pagination({ page, totalPages, total, limit, onPageChange, onLimitChange }: PaginationProps) {
   if (totalPages <= 1) return null;
 
   const pages = buildPageList(page, totalPages);
@@ -61,11 +67,27 @@ export function Pagination({ page, totalPages, total, limit, onPageChange }: Pag
       aria-label="Pagination"
       className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-3"
     >
-      <p className="text-xs text-gray-500 tabular-nums">
-        Page <span className="font-medium text-gray-700">{page}</span> of{" "}
-        <span className="font-medium text-gray-700">{totalPages}</span>
-        <span className="text-gray-400"> ({total} total)</span>
-      </p>
+      <div className="flex items-center gap-3">
+        <p className="text-xs text-gray-500 tabular-nums">
+          Page <span className="font-medium text-gray-700">{page}</span> of{" "}
+          <span className="font-medium text-gray-700">{totalPages}</span>
+          <span className="text-gray-400"> ({total} total)</span>
+        </p>
+        {onLimitChange && (
+          <select
+            value={limit}
+            onChange={(e) => onLimitChange(Number(e.target.value))}
+            aria-label="Items per page"
+            className="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {[10, 20, 50, 100].map((n) => (
+              <option key={n} value={n}>
+                Show {n}/page
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
 
       <ul className="flex items-center gap-1">
         <li>
