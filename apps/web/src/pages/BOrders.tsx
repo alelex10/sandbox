@@ -9,6 +9,8 @@ import { CardFormMpJs } from "../components/CardFormMpJs.js";
 import { CardBrick } from "../components/CardBrick.js";
 import { SubViewToggle } from "../components/SubViewToggle.js";
 import { NotesView } from "../components/NotesView.js";
+import { ThreeColumnLayout } from "../components/ThreeColumnLayout.js";
+import { HistorySidebar } from "../components/HistorySidebar.js";
 import {
   createProfile,
   chargeNow,
@@ -556,8 +558,7 @@ export function BOrders() {
     }
   }, []);
 
-  async function handleDelete(id: string, e: React.MouseEvent) {
-    e.stopPropagation();
+  async function handleDelete(id: string) {
     if (!window.confirm("¿Eliminar este registro del historial? (borrado lógico, los datos se conservan)")) return;
     try {
       await deleteB(id);
@@ -568,6 +569,22 @@ export function BOrders() {
       }
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
+    }
+  }
+
+  async function handleClearAll() {
+    if (deletingAll) return;
+    if (!window.confirm("¿Eliminar TODO el historial de esta sección? (borrado lógico, los datos se conservan)")) return;
+    setDeletingAll(true);
+    try {
+      await deleteAllB();
+      await fetchSubscriptions();
+      setSelectedId(null);
+      setDetail(null);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
+    } finally {
+      setDeletingAll(false);
     }
   }
 
@@ -618,173 +635,140 @@ export function BOrders() {
       {subView === "notas" ? (
         <NotesView method="b_orders" />
       ) : (
-      <div className="grid grid-cols-1 lg:grid-cols-[18rem_1fr] gap-6">
-        {/* ── Left sidebar ── */}
-        <aside className="space-y-2">
-          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-            <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-900">Suscripciones</h3>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400">{subscriptions.length}</span>
-                {subscriptions.length > 0 && (
-                  <button
-                    type="button"
-                    disabled={deletingAll}
-                    onClick={async () => {
-                      if (!window.confirm("¿Eliminar TODO el historial de esta sección? (borrado lógico, los datos se conservan)")) return;
-                      setDeletingAll(true);
-                      try {
-                        await deleteAllB();
-                        await fetchSubscriptions();
-                        setSelectedId(null);
-                        setDetail(null);
-                      } catch (err) {
-                        window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
-                      } finally {
-                        setDeletingAll(false);
-                      }
-                    }}
-                    className="text-xs text-red-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Eliminar todo
-                  </button>
-                )}
-              </div>
-            </div>
-            <ul className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
-              {subscriptions.length === 0 && (
-                <li className="px-4 py-3 text-xs text-gray-400 italic">None yet.</li>
-              )}
-              {subscriptions.map((sub) => (
-                <li key={sub.id} className="relative group">
-                  <button
-                    type="button"
-                    onClick={() => selectSubscription(sub.id)}
-                    className={[
-                      "w-full text-left px-4 py-3 text-xs hover:bg-gray-50 transition-colors pr-8",
-                      selectedId === sub.id ? "bg-blue-50 border-l-2 border-blue-500" : "",
-                    ].join(" ")}
-                  >
-                    <div className="font-mono text-gray-700 truncate">{sub.id.slice(0, 16)}…</div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <StatusBadge status={sub.status} />
-                      <span className="text-gray-400">{sub.charges.length} charges</span>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => void handleDelete(sub.id, e)}
-                    title="Eliminar del historial (borrado lógico)"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all p-1"
-                  >
-                    🗑
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </aside>
-
-        {/* ── Right main column ── */}
-        <div className="space-y-4 min-w-0">
-          {/* Register profile card */}
-          <Card title="Sección 1 — Registrar medio de pago">
-            <RegisterProfileSection onProfileCreated={handleProfileCreated} />
-          </Card>
-
-          {/* Charge card */}
-          <Card title="Sección 2 — Cobrar ahora">
-            <ChargeSection
-              subscriptions={subscriptions}
+        <ThreeColumnLayout
+          sidebar={
+            <HistorySidebar
+              title="Suscripciones"
+              items={subscriptions}
               selectedId={selectedId}
-              onCharged={handleCharged}
+              onSelect={selectSubscription}
+              getId={(s) => s.id}
+              onDelete={handleDelete}
+              onClearAll={handleClearAll}
+              renderItem={(sub) => (
+                <>
+                  <div className="font-mono text-gray-700 truncate">{sub.id.slice(0, 16)}…</div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <StatusBadge status={sub.status} />
+                    <span className="text-gray-400">{sub.charges.length} charges</span>
+                  </div>
+                </>
+              )}
             />
-          </Card>
+          }
+          form={
+            <div className="space-y-4 min-w-0">
+              {/* Register profile card */}
+              <Card title="Sección 1 — Registrar medio de pago">
+                <RegisterProfileSection onProfileCreated={handleProfileCreated} />
+              </Card>
 
-          {/* Medios de pago table */}
-          {subscriptions.length > 0 && (
-            <Card title="Medios de pago registrados">
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-xs text-gray-700">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">ID</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">Status</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">Profile ID</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">Customer ID</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">Tokenization</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">Charges</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">Created at</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {subscriptions.map((s) => (
-                      <tr
-                        key={s.id}
-                        className={`hover:bg-gray-50 cursor-pointer ${selectedId === s.id ? "bg-blue-50" : ""}`}
-                        onClick={() => selectSubscription(s.id)}
-                      >
-                        <td className="px-3 py-2 font-mono break-all">{s.id}</td>
-                        <td className="px-3 py-2">{s.status ?? "—"}</td>
-                        <td className="px-3 py-2 font-mono break-all">{s.paymentProfileId ?? "—"}</td>
-                        <td className="px-3 py-2 font-mono break-all">{s.customerId ?? "—"}</td>
-                        <td className="px-3 py-2">{s.tokenization ?? "—"}</td>
-                        <td className="px-3 py-2">{s.charges.length}</td>
-                        <td className="px-3 py-2 whitespace-nowrap">{s.createdAt}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          )}
-
-          {/* Timeline card */}
-          <Card title="Timeline">
-            {selectedSub ? (
-              <div>
-                <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
-                  <span className="text-xs text-gray-500 font-mono">{selectedSub.id}</span>
-                  <StatusBadge status={selectedSub.status} />
-                  <span className="text-xs text-gray-400">{selectedSub.charges.length} charges</span>
-                  <button
-                    type="button"
-                    onClick={() => { if (selectedId) void fetchDetail(selectedId); }}
-                    disabled={detailLoading}
-                    className="ml-auto text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
-                    title="Refetch timeline"
-                  >
-                    {detailLoading ? "..." : "↻ Actualizar"}
-                  </button>
-                </div>
-                <TimelineView
-                  entries={detail?.timeline ?? []}
-                  loading={detailLoading}
+              {/* Charge card */}
+              <Card title="Sección 2 — Cobrar ahora">
+                <ChargeSection
+                  subscriptions={subscriptions}
+                  selectedId={selectedId}
+                  onCharged={handleCharged}
                 />
+              </Card>
+            </div>
+          }
+          data={
+            <>
+              {/* Medios de pago table — global view of all registered profiles */}
+              {subscriptions.length > 0 && (
+                <Card title="Medios de pago registrados">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-xs text-gray-700">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium text-gray-500">ID</th>
+                          <th className="px-3 py-2 text-left font-medium text-gray-500">Status</th>
+                          <th className="px-3 py-2 text-left font-medium text-gray-500">Profile ID</th>
+                          <th className="px-3 py-2 text-left font-medium text-gray-500">Customer ID</th>
+                          <th className="px-3 py-2 text-left font-medium text-gray-500">Tokenization</th>
+                          <th className="px-3 py-2 text-left font-medium text-gray-500">Charges</th>
+                          <th className="px-3 py-2 text-left font-medium text-gray-500">Created at</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {subscriptions.map((s) => (
+                          <tr
+                            key={s.id}
+                            className={`hover:bg-gray-50 cursor-pointer ${selectedId === s.id ? "bg-blue-50" : ""}`}
+                            onClick={() => selectSubscription(s.id)}
+                          >
+                            <td className="px-3 py-2 font-mono break-all">{s.id}</td>
+                            <td className="px-3 py-2">{s.status ?? "—"}</td>
+                            <td className="px-3 py-2 font-mono break-all">{s.paymentProfileId ?? "—"}</td>
+                            <td className="px-3 py-2 font-mono break-all">{s.customerId ?? "—"}</td>
+                            <td className="px-3 py-2">{s.tokenization ?? "—"}</td>
+                            <td className="px-3 py-2">{s.charges.length}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">{s.createdAt}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              )}
+
+              {/* Timeline card */}
+              <Card title="Timeline">
+                {selectedSub ? (
+                  <div>
+                    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
+                      <span className="text-xs text-gray-500 font-mono">{selectedSub.id}</span>
+                      <StatusBadge status={selectedSub.status} />
+                      <span className="text-xs text-gray-400">{selectedSub.charges.length} charges</span>
+                      <button
+                        type="button"
+                        onClick={() => { if (selectedId) void fetchDetail(selectedId); }}
+                        disabled={detailLoading}
+                        className="ml-auto text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                        title="Refetch timeline"
+                      >
+                        {detailLoading ? "..." : "↻ Actualizar"}
+                      </button>
+                    </div>
+                    <TimelineView
+                      entries={detail?.timeline ?? []}
+                      loading={detailLoading}
+                    />
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400 italic">
+                    Select a subscription from the sidebar to view its details, payments and webhooks.
+                  </p>
+                )}
+              </Card>
+
+              {/* Payments diagnostic card — only shown when a subscription is selected */}
+              {selectedId && <PaymentsDiag subscriptionId={selectedId} />}
+
+              {/* Webhooks card */}
+              <Card title="Webhook Events (live feed)">
+                <p className="text-xs text-gray-500 mb-3">
+                  {selectedId
+                    ? `Live feed for subscription ${selectedId.slice(0, 8)}…`
+                    : "Method-level feed including unattributed events."}
+                  <span className="text-gray-400"> (polling every 5s)</span>
+                </p>
+                <WebhookList method="b_orders" subscriptionId={selectedId ?? undefined} />
+              </Card>
+
+              {/* Visual divider + RecentPaymentsPanel at the bottom of the data column.
+                  The divider separates the per-subscription blocks above from the
+                  global recent-payments view. */}
+              <div className="pt-4 border-t border-gray-200">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  Global
+                </p>
+                <RecentPaymentsPanel />
               </div>
-            ) : (
-              <p className="text-sm text-gray-400 italic">
-                Select a subscription from the sidebar to see its timeline.
-              </p>
-            )}
-          </Card>
-
-          {/* Payments diagnostic card — only shown when a subscription is selected */}
-          {selectedId && <PaymentsDiag subscriptionId={selectedId} />}
-
-          {/* Webhooks card */}
-          <Card title="Webhook Events (live feed)">
-            <p className="text-xs text-gray-500 mb-3">
-              Method-level feed including unattributed events.
-              <span className="text-gray-400"> (polling every 5s)</span>
-            </p>
-            <WebhookList method="b_orders" />
-          </Card>
-
-          {/* Global recent payments panel */}
-          <RecentPaymentsPanel />
-        </div>
-      </div>
+            </>
+          }
+        />
       )}
     </div>
   );
