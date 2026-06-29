@@ -1,10 +1,12 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { CreatePlanRequest, SubscribeToPlanRequest } from "shared";
+import { buildDefaultReason } from "shared";
 import { createPlan, subscribeToPlan, getA3Subscription, getPlan } from "payments";
 import { db } from "../db.js";
 import { mpClient, getMpBackUrl } from "../mp.js";
 import { tryJsonParse } from "../util.js";
 import { paginate, parsePagination } from "../lib/pagination.js";
+import { getNextSequence } from "../lib/sequence.js";
 
 export const a3Router = Router();
 
@@ -350,13 +352,29 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
 
     if (body.cardTokenId) {
       // API path — create a linked PreApproval directly via MP SDK
+      // Compose effective reason: user override wins if non-empty, otherwise
+      // compose a default from the route shape. The counter ALWAYS advances
+      // (per locked decision), even when the user's reason wins.
+      const seq = await getNextSequence("a3_plan");
+      const userReason = body.reason?.trim() ?? "";
+      const effectiveReason =
+        userReason !== ""
+          ? userReason
+          : buildDefaultReason({
+              type: "A.3",
+              channel: "tokenizacion",
+              tokenization: body.tokenization,
+              paymentMethod: "card",
+              seq,
+            });
+
       const result = await subscribeToPlan(mpClient(), {
         preapprovalPlanId: body.preapprovalPlanId,
         payerEmail: body.payerEmail,
         externalReference: body.externalReference,
         cardTokenId: body.cardTokenId,
         backUrl: body.backUrl ?? getMpBackUrl(),
-        ...(body.reason !== undefined ? { reason: body.reason } : {}),
+        reason: effectiveReason,
         ...(body.autoRecurring !== undefined ? { autoRecurring: body.autoRecurring } : {}),
       });
 
@@ -375,6 +393,7 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
             payerEmail: body.payerEmail,
             preapprovalPlanId: body.preapprovalPlanId,
             tokenization: body.tokenization ?? null,
+            reason: effectiveReason,
             // A.3 API subscriptions do not carry amount/currency directly — plan holds them
             amount: 0,
             currency: "ARS",
@@ -423,6 +442,22 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
 
       const initPoint = plan.initPoint;
 
+      // Compose effective reason: user override wins if non-empty, otherwise
+      // compose a default for the redirect path (checkout_pro / pending).
+      // The counter ALWAYS advances (per locked decision), even when the
+      // user's reason wins.
+      const seq = await getNextSequence("a3_plan");
+      const userReason = body.reason?.trim() ?? "";
+      const effectiveReason =
+        userReason !== ""
+          ? userReason
+          : buildDefaultReason({
+              type: "A.3",
+              channel: "checkout_pro",
+              paymentMethod: "pending",
+              seq,
+            });
+
       // Persist a Subscription record to track this redirect-based subscription attempt
       // Atomic: subscription row + initial snapshot created together (M1).
       const subscription = await db.$transaction(async (tx) => {
@@ -434,6 +469,7 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
             externalReference: body.externalReference,
             payerEmail: body.payerEmail,
             preapprovalPlanId: body.preapprovalPlanId,
+            reason: effectiveReason,
             initPoint,
             amount: 0,
             currency: "ARS",
@@ -654,6 +690,7 @@ a3Router.get("/", async (req: Request, res: Response, next: NextFunction) => {
         status: s.status,
         externalReference: s.externalReference,
         payerEmail: s.payerEmail,
+        reason: s.reason,
         preapprovalPlanId: s.preapprovalPlanId,
         tokenization: s.tokenization,
         initPoint: s.initPoint,

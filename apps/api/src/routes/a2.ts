@@ -1,10 +1,12 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { CreateA2Request } from "shared";
+import { buildDefaultReason } from "shared";
 import { createA2, getA2 } from "payments";
 import { db } from "../db.js";
 import { mpClient, getMpBackUrl } from "../mp.js";
 import { tryJsonParse } from "../util.js";
 import { paginate, parsePagination } from "../lib/pagination.js";
+import { getNextSequence } from "../lib/sequence.js";
 
 export const a2Router = Router();
 
@@ -21,8 +23,24 @@ a2Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
       body.autoRecurring.startDate ??
       new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
+    // Compose effective reason: user override wins if non-empty, otherwise
+    // compose a default from the route shape. The counter ALWAYS advances
+    // (per locked decision), even when the user's reason wins.
+    const seq = await getNextSequence("a2_authorized");
+    const userReason = body.reason?.trim() ?? "";
+    const effectiveReason =
+      userReason !== ""
+        ? userReason
+        : buildDefaultReason({
+            type: "A.2",
+            channel: "tokenizacion",
+            tokenization: body.tokenization,
+            paymentMethod: "card",
+            seq,
+          });
+
     const result = await createA2(mpClient(), {
-      reason: body.reason,
+      reason: effectiveReason,
       payerEmail: body.payerEmail,
       externalReference,
       backUrl: body.backUrl ?? getMpBackUrl(),
@@ -56,7 +74,7 @@ a2Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
           status: result.status ?? null,
           externalReference,
           payerEmail: body.payerEmail,
-          reason: body.reason,
+          reason: effectiveReason,
           amount: body.autoRecurring.amount,
           currency: body.autoRecurring.currency,
           startDate,

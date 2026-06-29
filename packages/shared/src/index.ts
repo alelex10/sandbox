@@ -1,6 +1,12 @@
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
+// Default reason composer (pure helper, no I/O)
+// ---------------------------------------------------------------------------
+
+export * from "./reason";
+
+// ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
 
@@ -38,11 +44,24 @@ export const AutoRecurring = z.object({
 export type AutoRecurring = z.infer<typeof AutoRecurring>;
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+// Treats "" as absent. Clients (e.g. a pristine form input) may send an empty
+// string to mean "use the server default" rather than omitting the field.
+// Plain `.optional()` only tolerates `undefined`, so a bare "" would fail the
+// inner `.min(1)`. This normalizes "" -> undefined before validation, so the
+// field accepts both a missing value and a blank one, while still rejecting
+// any non-empty string shorter than the minimum.
+const optionalNonEmptyString = (inner: z.ZodString = z.string().min(1)) =>
+  z.preprocess((v) => (v === "" ? undefined : v), inner.optional());
+
+// ---------------------------------------------------------------------------
 // Request schemas
 // ---------------------------------------------------------------------------
 
 export const CreateA1Request = z.object({
-  reason: z.string().min(1),
+  reason: optionalNonEmptyString(),
   payerEmail: z.string().email(),
   externalReference: z.string().min(1).optional(),
   backUrl: z.string().url().optional(),
@@ -78,7 +97,7 @@ export const SubscribeToPlanRequest = z.object({
   cardTokenId: z.string().min(1).optional(),
   tokenization: Tokenization.optional(),
   backUrl: z.string().url().optional(),
-  reason: z.string().min(1).optional(),
+  reason: optionalNonEmptyString(),
   // Optional full auto_recurring override — an empirical probe to test whether per-subscription
   // values override the plan's values in MercadoPago. All fields are optional so any subset
   // can be sent; MP may honor or silently ignore them.
@@ -139,6 +158,7 @@ export const SubscriptionResponse = z.object({
   method: SubscriptionMethod,
   mpId: z.string().nullable(),
   status: z.string().nullable(),
+  reason: z.string().nullable(),
   initPoint: z.string().nullable(),
   tokenization: Tokenization.nullable().optional(),
   preapprovalPlanId: z.string().nullable().optional(),

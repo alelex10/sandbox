@@ -1,10 +1,12 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { CreateA1Request } from "shared";
+import { buildDefaultReason } from "shared";
 import { createA1, getA1 } from "payments";
 import { db } from "../db.js";
 import { mpClient, getMpBackUrl } from "../mp.js";
 import { tryJsonParse } from "../util.js";
 import { paginate, parsePagination } from "../lib/pagination.js";
+import { getNextSequence } from "../lib/sequence.js";
 
 export const a1Router = Router();
 
@@ -21,8 +23,23 @@ a1Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
       body.autoRecurring.startDate ??
       new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
+    // Compose effective reason: user override wins if non-empty, otherwise
+    // compose a default from the route shape. The counter ALWAYS advances
+    // (per locked decision), even when the user's reason wins.
+    const seq = await getNextSequence("a1_pending");
+    const userReason = body.reason?.trim() ?? "";
+    const effectiveReason =
+      userReason !== ""
+        ? userReason
+        : buildDefaultReason({
+            type: "A.1",
+            channel: "checkout_pro",
+            paymentMethod: "pending",
+            seq,
+          });
+
     const result = await createA1(mpClient(), {
-      reason: body.reason,
+      reason: effectiveReason,
       payerEmail: body.payerEmail,
       externalReference,
       backUrl: body.backUrl ?? getMpBackUrl(),
@@ -55,7 +72,7 @@ a1Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
           status: result.status ?? null,
           externalReference,
           payerEmail: body.payerEmail,
-          reason: body.reason,
+          reason: effectiveReason,
           amount: body.autoRecurring.amount,
           currency: body.autoRecurring.currency,
           startDate,

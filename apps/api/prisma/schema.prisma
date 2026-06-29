@@ -113,3 +113,8 @@ model Note {
 
   @@index([method])
 }
+
+model Counter {
+  name  String @id
+  value Int    @default(0)
+}
