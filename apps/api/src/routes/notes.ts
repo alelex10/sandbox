@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { CreateNoteRequest, UpdateNoteRequest, SubscriptionMethod } from "shared";
 import { db } from "../db.js";
+import { paginate, parsePagination } from "../lib/pagination.js";
 
 export const notesRouter = Router();
 
@@ -29,7 +30,8 @@ function toNoteResponse(n: {
 }
 
 // ---------------------------------------------------------------------------
-// GET /notes?method=<method>  — list non-deleted notes for a method
+// GET /notes?method=<method>&page=<n>&limit=<m>
+//   — list non-deleted notes for a method, paginated
 // ---------------------------------------------------------------------------
 
 notesRouter.get("/", async (req: Request, res: Response, next: NextFunction) => {
@@ -40,12 +42,20 @@ notesRouter.get("/", async (req: Request, res: Response, next: NextFunction) => 
       return;
     }
 
-    const rows = await db.note.findMany({
-      where: { method: parsed.data, deletedAt: null },
-      orderBy: { createdAt: "desc" },
-    });
+    const { page, limit } = parsePagination(req.query);
+    const envelope = await paginate(
+      db.note,
+      {
+        where: { method: parsed.data, deletedAt: null },
+        orderBy: { createdAt: "desc" },
+      },
+      { page, limit },
+    );
 
-    res.json(rows.map(toNoteResponse));
+    res.json({
+      ...envelope,
+      items: envelope.items.map(toNoteResponse),
+    });
   } catch (err) {
     next(err);
   }
