@@ -1,8 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { SubscriptionMethod, NoteResponse } from "shared";
 import { listNotes, createNote, updateNote, deleteNote } from "../api.js";
+import { usePaginatedQuery } from "../hooks/usePaginatedQuery.js";
+import { Pagination } from "./Pagination.js";
 
 // ---------------------------------------------------------------------------
 // MarkdownRenderer — shared by full view and editor preview
@@ -193,46 +196,63 @@ function NoteEditor({
 
 type Mode = "view" | "create" | "edit";
 
-interface NotesViewProps {
-  method: SubscriptionMethod;
+const ALL_METHODS: SubscriptionMethod[] = [
+  "a1_pending",
+  "a2_authorized",
+  "a3_plan",
+  "b_orders",
+];
+
+function isMethod(v: string | null): v is SubscriptionMethod {
+  return v != null && (ALL_METHODS as string[]).includes(v);
 }
 
-export function NotesView({ method }: NotesViewProps) {
-  const [notes, setNotes] = useState<NoteResponse[]>([]);
+interface NotesViewProps {
+  /**
+   * Optional explicit method. When omitted, the method is read from
+   * the `?method=` URL search param (default: `a1_pending`). This lets the
+   * `/notes` route carry the method in the URL (PR4 deviation #1).
+   */
+  method?: SubscriptionMethod;
+}
+
+export function NotesView({ method: methodProp }: NotesViewProps) {
+  const [searchParams] = useSearchParams();
+  const urlMethod = searchParams.get("method");
+  // Priority: explicit prop > URL ?method > default a1_pending
+  const method: SubscriptionMethod = methodProp
+    ?? (isMethod(urlMethod) ? urlMethod : "a1_pending");
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("view");
-  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  // refetchToken bumps after create/update/delete to trigger a list refresh.
+  const [refetchToken, setRefetchToken] = useState(0);
 
-  const fetchNotes = useCallback(async () => {
-    setLoading(true);
-    try {
-      const rows = await listNotes(method);
-      setNotes(rows);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load notes");
-    } finally {
-      setLoading(false);
-    }
-  }, [method]);
+  const fetcher = useCallback(
+    async (p: { page: number; limit: number }) => {
+      void refetchToken; // depend on the token so the hook re-runs after mutations
+      return listNotes(method, { page: p.page, limit: p.limit });
+    },
+    [method, refetchToken],
+  );
 
-  useEffect(() => {
-    void fetchNotes();
-  }, [fetchNotes]);
+  const { data: notes, page, setPage, total, totalPages, limit, loading, error } =
+    usePaginatedQuery<NoteResponse>({ fetcher });
 
   const selectedNote = notes.find((n) => n.id === selectedId) ?? null;
 
   async function handleCreate(title: string, body: string) {
     setSubmitting(true);
-    setError(null);
+    setActionError(null);
     try {
       const created = await createNote({ method, title, body });
-      await fetchNotes();
+      setRefetchToken((n) => n + 1);
       setSelectedId(created.id);
       setMode("view");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create note");
+      setActionError(err instanceof Error ? err.message : "Failed to create note");
     } finally {
       setSubmitting(false);
     }
@@ -241,13 +261,13 @@ export function NotesView({ method }: NotesViewProps) {
   async function handleUpdate(title: string, body: string) {
     if (!selectedId) return;
     setSubmitting(true);
-    setError(null);
+    setActionError(null);
     try {
       await updateNote(selectedId, { title, body });
-      await fetchNotes();
+      setRefetchToken((n) => n + 1);
       setMode("view");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update note");
+      setActionError(err instanceof Error ? err.message : "Failed to update note");
     } finally {
       setSubmitting(false);
     }
@@ -262,7 +282,7 @@ export function NotesView({ method }: NotesViewProps) {
       return;
     try {
       await deleteNote(id);
-      await fetchNotes();
+      setRefetchToken((n) => n + 1);
       if (selectedId === id) {
         setSelectedId(null);
         setMode("view");
@@ -280,7 +300,9 @@ export function NotesView({ method }: NotesViewProps) {
           <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-gray-900">
               Notes{" "}
-              <span className="text-xs font-normal text-gray-400">({notes.length})</span>
+              <span className="text-xs font-normal text-gray-400">
+                ({total} {loading ? "…" : ""})
+              </span>
             </h3>
             <button
               type="button"
@@ -297,32 +319,43 @@ export function NotesView({ method }: NotesViewProps) {
           {loading ? (
             <p className="px-4 py-3 text-xs text-gray-400 italic">Loading…</p>
           ) : (
-            <ul className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
-              {notes.length === 0 && (
-                <li className="px-4 py-3 text-xs text-gray-400 italic">No notes yet.</li>
-              )}
-              {notes.map((note) => (
-                <NoteCard
-                  key={note.id}
-                  note={note}
-                  selected={selectedId === note.id}
-                  onSelect={() => {
-                    setSelectedId(note.id);
-                    setMode("view");
-                  }}
-                  onDelete={() => void handleDelete(note.id)}
+            <>
+              <ul className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+                {notes.length === 0 && (
+                  <li className="px-4 py-3 text-xs text-gray-400 italic">No notes yet.</li>
+                )}
+                {notes.map((note) => (
+                  <NoteCard
+                    key={note.id}
+                    note={note}
+                    selected={selectedId === note.id}
+                    onSelect={() => {
+                      setSelectedId(note.id);
+                      setMode("view");
+                    }}
+                    onDelete={() => void handleDelete(note.id)}
+                  />
+                ))}
+              </ul>
+              <div className="px-2 py-1 border-t border-gray-100">
+                <Pagination
+                  page={page}
+                  totalPages={totalPages}
+                  total={total}
+                  limit={limit}
+                  onPageChange={setPage}
                 />
-              ))}
-            </ul>
+              </div>
+            </>
           )}
         </div>
       </aside>
 
       {/* ── Right detail/editor column ── */}
       <div className="min-w-0">
-        {error && (
+        {(error || actionError) && (
           <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-            {error}
+            {actionError ?? error}
           </p>
         )}
 
