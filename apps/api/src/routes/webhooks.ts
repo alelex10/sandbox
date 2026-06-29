@@ -3,6 +3,7 @@ import { db } from "../db.js";
 import { mpFetch } from "../mp.js";
 import { classifyWebhook } from "payments";
 import { tryJsonParse } from "../util.js";
+import { paginate, parsePagination } from "../lib/pagination.js";
 
 export const webhooksRouter = Router();
 
@@ -130,32 +131,43 @@ webhooksRouter.delete("/", async (_req: Request, res: Response, next: NextFuncti
   }
 });
 
-// GET /webhooks?method= — list events, optionally filtered by method.
-// Special value "unattributed" returns events where method IS NULL or "unknown".
+// GET /webhooks?method=&page=&limit= — list events (paginated).
+// - method: filter by method. Special value "unattributed" returns events
+//   where method IS NULL or "unknown".
+// - page/limit: paginated; default limit = 200, cap = 200 (preserves the
+//   pre-pagination hardcoded `take: 200` upper bound).
 webhooksRouter.get("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const method = req.query.method as string | undefined;
 
-    const events = await db.webhookEvent.findMany({
-      where:
-        method === "unattributed"
-          ? { OR: [{ method: null }, { method: "unknown" }], deletedAt: null }
-          : method
-            ? { method, deletedAt: null }
-            : { deletedAt: null },
-      orderBy: { receivedAt: "desc" },
-      take: 200,
+    const { page, limit } = parsePagination(req.query, {
+      maxLimit: 200,
+      defaultLimit: 200,
     });
+    const envelope = await paginate(
+      db.webhookEvent,
+      {
+        where:
+          method === "unattributed"
+            ? { OR: [{ method: null }, { method: "unknown" }], deletedAt: null }
+            : method
+              ? { method, deletedAt: null }
+              : { deletedAt: null },
+        orderBy: { receivedAt: "desc" },
+      },
+      { page, limit },
+    );
 
     // Parse-on-read: rawBody and rawFetched are stored as JSON strings.
     // Return parsed objects so callers don't have to double-decode.
-    const parsed = events.map((ev) => ({
-      ...ev,
-      rawBody: tryJsonParse(ev.rawBody as string | null),
-      rawFetched: tryJsonParse(ev.rawFetched as string | null),
-    }));
-
-    res.json(parsed);
+    res.json({
+      ...envelope,
+      items: envelope.items.map((ev) => ({
+        ...ev,
+        rawBody: tryJsonParse(ev.rawBody as string | null),
+        rawFetched: tryJsonParse(ev.rawFetched as string | null),
+      })),
+    });
   } catch (err) {
     next(err);
   }
