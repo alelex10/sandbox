@@ -4,6 +4,7 @@ import { createA2, getA2 } from "payments";
 import { db } from "../db.js";
 import { mpClient, getMpBackUrl } from "../mp.js";
 import { tryJsonParse } from "../util.js";
+import { paginate, parsePagination } from "../lib/pagination.js";
 
 export const a2Router = Router();
 
@@ -90,40 +91,39 @@ a2Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// GET /a2 — list all a2_authorized subscriptions with their webhook events
-a2Router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
+// GET /a2 — list all a2_authorized subscriptions (paginated)
+a2Router.get("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const subscriptions = await db.subscription.findMany({
-      where: { method: "a2_authorized", deletedAt: null },
-      include: { events: { where: { deletedAt: null }, orderBy: { receivedAt: "desc" } } },
-      orderBy: { createdAt: "desc" },
-    });
+    const { page, limit } = parsePagination(req.query);
+    const envelope = await paginate(
+      db.subscription,
+      {
+        where: { method: "a2_authorized", deletedAt: null },
+        orderBy: { createdAt: "desc" },
+      },
+      { page, limit },
+    );
 
-    const result = subscriptions.map((s) => ({
-      id: s.id,
-      method: s.method,
-      mpId: s.mpId,
-      status: s.status,
-      externalReference: s.externalReference,
-      payerEmail: s.payerEmail,
-      reason: s.reason,
-      amount: s.amount,
-      currency: s.currency,
-      startDate: s.startDate,
-      tokenization: s.tokenization,
-      initPoint: s.initPoint,
-      rawCreate: tryJsonParse(s.rawCreate),
-      rawLastSearch: tryJsonParse(s.rawLastSearch),
-      createdAt: s.createdAt.toISOString(),
-      events: s.events.map((ev) => ({
-        ...ev,
-        rawBody: tryJsonParse(ev.rawBody as string | null),
-        rawFetched: tryJsonParse(ev.rawFetched as string | null),
-        receivedAt: ev.receivedAt.toISOString(),
+    res.json({
+      ...envelope,
+      items: envelope.items.map((s) => ({
+        id: s.id,
+        method: s.method,
+        mpId: s.mpId,
+        status: s.status,
+        externalReference: s.externalReference,
+        payerEmail: s.payerEmail,
+        reason: s.reason,
+        amount: s.amount,
+        currency: s.currency,
+        startDate: s.startDate,
+        tokenization: s.tokenization,
+        initPoint: s.initPoint,
+        rawCreate: tryJsonParse(s.rawCreate),
+        rawLastSearch: tryJsonParse(s.rawLastSearch),
+        createdAt: s.createdAt.toISOString(),
       })),
-    }));
-
-    res.json(result);
+    });
   } catch (err) {
     next(err);
   }

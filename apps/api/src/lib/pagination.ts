@@ -45,9 +45,21 @@ export interface ParsedPagination {
   take: number;
 }
 
-export function parsePagination(q: Record<string, unknown>): ParsedPagination {
+export interface ParsePaginationOptions {
+  /** Upper bound for `?limit`; defaults to MAX_LIMIT (100). */
+  maxLimit?: number;
+  /** Fallback for `?limit` when missing or non-numeric; defaults to DEFAULT_LIMIT (20). */
+  defaultLimit?: number;
+}
+
+export function parsePagination(
+  q: Record<string, unknown>,
+  opts: ParsePaginationOptions = {},
+): ParsedPagination {
+  const maxLimit = opts.maxLimit ?? MAX_LIMIT;
+  const defaultLimit = opts.defaultLimit ?? DEFAULT_LIMIT;
   const page = clampInt(q.page, 1, Number.MAX_SAFE_INTEGER, DEFAULT_PAGE);
-  const limit = clampInt(q.limit, 1, MAX_LIMIT, DEFAULT_LIMIT);
+  const limit = clampInt(q.limit, 1, maxLimit, defaultLimit);
   return { page, limit, offset: (page - 1) * limit, take: limit };
 }
 
