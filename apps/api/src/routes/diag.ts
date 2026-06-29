@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { db } from "../db.js";
 import { mpFetch } from "../mp.js";
 import { env } from "../config.js";
+import { parsePagination, paginationEnvelope } from "../lib/pagination.js";
 
 export const diagRouter = Router();
 
@@ -22,6 +23,7 @@ interface MpPayment {
 }
 
 interface MpPaymentSearchResponse {
+  paging?: { total?: number; offset?: number; limit?: number };
   results?: MpPayment[];
   [key: string]: unknown;
 }
@@ -120,23 +122,25 @@ function normAuthorizedPayment(ap: MpAuthorizedPayment) {
 }
 
 // ---------------------------------------------------------------------------
-// GET /diag/payments?limit=10
+// GET /diag/payments?page=1&limit=10
 // Returns recent payments from MP (payment search, sorted desc by date_created)
+// as a `PaginationEnvelope<PaymentDiagResponse>` (matches the contract used by
+// every other list endpoint in the app).
 // ---------------------------------------------------------------------------
 
 diagRouter.get(
   "/payments",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const limit = Math.min(
-        50,
-        Math.max(1, parseInt(String(req.query.limit ?? "10"), 10) || 10),
-      );
+      const { page, limit, offset } = parsePagination(req.query, {
+        maxLimit: 50,
+        defaultLimit: 10,
+      });
 
       let mpResult: MpPaymentSearchResponse;
       try {
         mpResult = (await mpFetch(
-          `/v1/payments/search?sort=date_created&criteria=desc&limit=${limit}`,
+          `/v1/payments/search?sort=date_created&criteria=desc&limit=${limit}&offset=${offset}`,
         )) as MpPaymentSearchResponse;
       } catch (mpErr) {
         const detail =
@@ -145,8 +149,14 @@ diagRouter.get(
         return;
       }
 
-      const payments = (mpResult.results ?? []).map(normPayment);
-      res.json({ payments });
+      const items = (mpResult.results ?? []).map(normPayment);
+      // MP's `/payments/search` includes `paging.total`. If absent, fall back
+      // to items.length + offset so the envelope stays well-formed.
+      const total =
+        typeof mpResult.paging?.total === "number"
+          ? mpResult.paging.total
+          : items.length + offset;
+      res.json(paginationEnvelope(items, total, page, limit));
     } catch (err) {
       next(err);
     }
@@ -154,8 +164,10 @@ diagRouter.get(
 );
 
 // ---------------------------------------------------------------------------
-// GET /diag/subscriptions/:id/payments
+// GET /diag/subscriptions/:id/payments?page=1&limit=20
 // Returns payments tied to a local subscription, merged from multiple MP queries
+// (PR5 follow-up: envelope-shaped; per-subscription pagination is server-side
+// via in-memory slice since MP's `/authorized_payments/search` rejects `?limit`).
 // ---------------------------------------------------------------------------
 
 diagRouter.get(
@@ -172,17 +184,26 @@ diagRouter.get(
         return;
       }
 
-      const sources: string[] = [];
-      const errors: string[] = [];
+      const { page, limit, offset } = parsePagination(req.query, {
+        maxLimit: 100,
+        defaultLimit: 20,
+      });
+
       const paymentsById = new Map<
         string,
         ReturnType<typeof normPayment>
       >();
+      // Track whether we attempted each source and whether it errored, so we
+      // can still surface the "all sources failed" case (as a 502) even though
+      // we no longer return the `sources` / `errors` lists in the envelope.
+      let source1Attempted = false;
+      let source1Failed = false;
+      let source2Attempted = false;
+      let source2Failed = false;
 
       // ── Source 1: /v1/payments/search?external_reference={ref} ──
       if (sub.externalReference) {
-        const source1 = `GET /v1/payments/search?external_reference=${sub.externalReference}`;
-        sources.push(source1);
+        source1Attempted = true;
         try {
           const r = (await mpFetch(
             `/v1/payments/search?external_reference=${encodeURIComponent(sub.externalReference)}&sort=date_created&criteria=desc&limit=50`,
@@ -191,10 +212,8 @@ diagRouter.get(
             const n = normPayment(p);
             paymentsById.set(n.id, n);
           }
-        } catch (err) {
-          errors.push(
-            `${source1}: ${err instanceof Error ? err.message : String(err)}`,
-          );
+        } catch {
+          source1Failed = true;
         }
       }
 
@@ -208,8 +227,7 @@ diagRouter.get(
         sub.method === "a3_plan";
 
       if (isPreapprovalMethod && sub.mpId) {
-        const source2 = `GET /authorized_payments/search?preapproval_id=${sub.mpId}`;
-        sources.push(source2);
+        source2Attempted = true;
         try {
           // NOTE: /authorized_payments/search rejects an explicit `limit`
           // ("Invalid value for limit"). Omit it and let MP use its default.
@@ -222,43 +240,40 @@ diagRouter.get(
               paymentsById.set(n.id, n);
             }
           }
-        } catch (err) {
+        } catch {
           // Non-fatal: this endpoint may not exist or may 404 in test mode
-          errors.push(
-            `${source2}: ${err instanceof Error ? err.message : String(err)}`,
-          );
+          source2Failed = true;
         }
       }
 
-      // All sources failed and there are no results → 502
-      if (paymentsById.size === 0 && errors.length > 0 && sources.length === errors.length) {
-        // Only 502 if every source errored; if some returned 0 results that's fine
-        const allFailed = sources.every((_s, i) =>
-          errors.some((e) => e.startsWith(sources[i])),
-        );
-        if (allFailed && sources.length > 0) {
-          res.status(502).json({
-            error: "All MP queries failed",
-            errors,
-            sources,
-          });
-          return;
-        }
+      // All attempted sources failed and there are no results → 502.
+      // Keeps the dev-facing "MP is down" signal without leaking per-source
+      // error details to the client.
+      const totalAttempted =
+        (source1Attempted ? 1 : 0) + (source2Attempted ? 1 : 0);
+      const totalFailed =
+        (source1Failed ? 1 : 0) + (source2Failed ? 1 : 0);
+      if (
+        paymentsById.size === 0 &&
+        totalAttempted > 0 &&
+        totalFailed === totalAttempted
+      ) {
+        res.status(502).json({ error: "All MP queries failed" });
+        return;
       }
 
       // Sort merged results by dateCreated desc (nulls last)
-      const payments = Array.from(paymentsById.values()).sort((a, b) => {
+      const allPayments = Array.from(paymentsById.values()).sort((a, b) => {
         if (!a.dateCreated && !b.dateCreated) return 0;
         if (!a.dateCreated) return 1;
         if (!b.dateCreated) return -1;
         return b.dateCreated.localeCompare(a.dateCreated);
       });
 
-      res.json({
-        payments,
-        sources,
-        ...(errors.length > 0 ? { errors } : {}),
-      });
+      // Server-side slice of the in-memory merged array. Slicing is O(offset+limit)
+      // and bounded by the merged set size, which is fine for the sandbox.
+      const items = allPayments.slice(offset, offset + limit);
+      res.json(paginationEnvelope(items, allPayments.length, page, limit));
     } catch (err) {
       next(err);
     }
