@@ -1,56 +1,89 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import type { SubscriptionMethod, WebhookEventResponse } from "shared";
 import { listWebhooks, deleteWebhook, clearWebhooks } from "../api.js";
 import { JsonViewer } from "./JsonViewer.js";
+import { Pagination } from "./Pagination.js";
+import { usePaginatedQuery } from "../hooks/usePaginatedQuery.js";
 
 interface WebhookListProps {
   method: SubscriptionMethod;
-  pollIntervalMs?: number;
+  /** When set, only events attributed to this local subscription id are shown. */
+  subscriptionId?: string;
+  /** When set, only events attributed to any subscription of this plan are shown. */
+  planId?: string;
 }
 
-export function WebhookList({ method, pollIntervalMs = 5000 }: WebhookListProps) {
-  const [events, setEvents] = useState<WebhookEventResponse[]>([]);
-  const [unattributed, setUnattributed] = useState<WebhookEventResponse[]>([]);
-  const [error, setError] = useState<string | null>(null);
+const WEBHOOKS_DEFAULT_LIMIT = 50;
 
-  const fetchEvents = useCallback(async () => {
-    try {
-      const [data, unattributedData] = await Promise.all([
-        listWebhooks(method),
-        listWebhooks("unattributed"),
-      ]);
-      setEvents(data);
-      setUnattributed(unattributedData);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch webhooks");
-    }
-  }, [method]);
+export function WebhookList({
+  method,
+  subscriptionId,
+  planId,
+}: WebhookListProps) {
+  // Unclassified (no method) events can never be linked to a specific
+  // subscription/plan, so we only fetch them when no scope filter is active.
+  const scoped = Boolean(subscriptionId || planId);
 
-  useEffect(() => {
-    fetchEvents();
-    const timer = setInterval(fetchEvents, pollIntervalMs);
-    return () => clearInterval(timer);
-  }, [fetchEvents, pollIntervalMs]);
+  // Bumping this refetchToken re-runs the usePaginatedQuery fetcher (which
+  // depends on it via the wrapper). Used after mutating deletes/clear.
+  const [refetchToken, setRefetchToken] = useState(0);
 
-  const attributed = events.filter((e) => e.method !== null);
-  const unclassified = unattributed;
+  // Scoped fetcher: filtered by method + subscriptionId (or planId).
+  const scopedFetcher = useCallback(
+    async (p: { page: number; limit: number }) => {
+      const opts: { subscriptionId?: string; planId?: string; page?: number; limit?: number } = {
+        page: p.page,
+        limit: p.limit,
+      };
+      if (subscriptionId) opts.subscriptionId = subscriptionId;
+      else if (planId) opts.planId = planId;
+      // depend on refetchToken so the hook re-runs after mutations
+      void refetchToken;
+      return listWebhooks(method, opts);
+    },
+    [method, subscriptionId, planId, refetchToken],
+  );
+
+  const scopedQuery = usePaginatedQuery<WebhookEventResponse>({
+    fetcher: scopedFetcher,
+    defaultLimit: WEBHOOKS_DEFAULT_LIMIT,
+  });
+
+  // Unattributed fetcher: only when not scoped (per the comment above).
+  // We always declare the hook to keep hook order stable; when scoped, the
+  // result is ignored.
+  const unattributedFetcher = useCallback(
+    async (p: { page: number; limit: number }) => {
+      void refetchToken;
+      return listWebhooks("unattributed", { page: p.page, limit: p.limit });
+    },
+    [refetchToken],
+  );
+
+  const unattributedQuery = usePaginatedQuery<WebhookEventResponse>({
+    fetcher: unattributedFetcher,
+    defaultLimit: WEBHOOKS_DEFAULT_LIMIT,
+  });
+
+  const attributed = scopedQuery.data.filter((e) => e.method !== null);
+  const unclassified = scoped ? [] : unattributedQuery.data;
   const totalCount = attributed.length + unclassified.length;
+  const error = scopedQuery.error ?? (scoped ? null : unattributedQuery.error);
 
   const handleClearAll = async () => {
     if (!window.confirm("Delete all webhook events? This cannot be undone.")) return;
     try {
       await clearWebhooks();
-      await fetchEvents();
+      setRefetchToken((n) => n + 1);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "Failed to clear webhooks");
     }
   };
 
-  const handleDeleteOne = async (id: string) => {
+  const handleDeleteOne = async (_id: string) => {
     try {
-      await deleteWebhook(id);
-      await fetchEvents();
+      await deleteWebhook(_id);
+      setRefetchToken((n) => n + 1);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "Failed to delete webhook");
     }
@@ -74,25 +107,45 @@ export function WebhookList({ method, pollIntervalMs = 5000 }: WebhookListProps)
         <p className="text-sm text-red-600 mb-2">{error}</p>
       )}
 
+      {scoped && scopedQuery.data.length === 0 && !error && !scopedQuery.loading && (
+        <p className="text-sm text-gray-400">
+          No events yet for this {subscriptionId ? "subscription" : "plan"}.
+        </p>
+      )}
+
       {attributed.length > 0 && (
         <div className="mb-4">
           <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-            Attributed ({attributed.length})
+            Attributed ({scopedQuery.total} total)
           </h4>
           <EventList events={attributed} onDelete={handleDeleteOne} />
+          <Pagination
+            page={scopedQuery.page}
+            totalPages={scopedQuery.totalPages}
+            total={scopedQuery.total}
+            limit={scopedQuery.limit}
+            onPageChange={scopedQuery.setPage}
+          />
         </div>
       )}
 
-      {unclassified.length > 0 && (
+      {!scoped && unclassified.length > 0 && (
         <div>
           <h4 className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
-            Unclassified ({unclassified.length})
+            Unclassified ({unattributedQuery.total} total)
           </h4>
           <EventList events={unclassified} muted onDelete={handleDeleteOne} />
+          <Pagination
+            page={unattributedQuery.page}
+            totalPages={unattributedQuery.totalPages}
+            total={unattributedQuery.total}
+            limit={unattributedQuery.limit}
+            onPageChange={unattributedQuery.setPage}
+          />
         </div>
       )}
 
-      {events.length === 0 && unattributed.length === 0 && !error && (
+      {!scoped && scopedQuery.data.length === 0 && unattributedQuery.data.length === 0 && !error && !scopedQuery.loading && !unattributedQuery.loading && (
         <p className="text-sm text-gray-400">No events yet.</p>
       )}
     </div>

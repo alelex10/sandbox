@@ -10,11 +10,16 @@ interface HistorySidebarProps<T> {
   onDelete?: (id: string) => void;
   onClearAll?: () => void;
   emptyMessage?: string;
+  /** Optional content rendered below the list (e.g. a `<Pagination>` control).
+   *  Hidden when not provided. */
+  footer?: ReactNode;
 }
 
 /**
  * Generic sidebar with: title (including count), optional clear-all button,
- * scrollable list, selected-item highlight, optional per-item delete button.
+ * scrollable list, selected-item highlight, optional per-item delete button,
+ * and an optional `footer` slot for content rendered below the list
+ * (typically a `<Pagination>` control).
  *
  * The per-item delete button stops click propagation internally so callers
  * do not need to manage `e.stopPropagation()` themselves.
@@ -29,6 +34,7 @@ export function HistorySidebar<T>({
   onDelete,
   onClearAll,
   emptyMessage = "No items yet.",
+  footer,
 }: HistorySidebarProps<T>) {
   return (
     <aside className="space-y-2">
@@ -84,6 +90,9 @@ export function HistorySidebar<T>({
             );
           })}
         </ul>
+        {footer != null && (
+          <div className="border-t border-gray-100 px-2 py-1">{footer}</div>
+        )}
       </div>
     </aside>
   );
