@@ -7,6 +7,8 @@ import { StatusBadge } from "../components/StatusBadge.js";
 import { AdvancedSection } from "../components/AdvancedSection.js";
 import { SubViewToggle } from "../components/SubViewToggle.js";
 import { NotesView } from "../components/NotesView.js";
+import { ThreeColumnLayout } from "../components/ThreeColumnLayout.js";
+import { HistorySidebar } from "../components/HistorySidebar.js";
 import { createA1, searchA1, listA1, getA1Detail, deleteA1, deleteAllA1, cancelSubscription } from "../api.js";
 import { PaymentsDiag } from "../components/PaymentsDiag.js";
 import type { SubscriptionResponse, SubscriptionDetailResponse } from "shared";
@@ -108,8 +110,7 @@ export function A1Pending() {
     }
   }, []);
 
-  async function handleDelete(id: string, e: React.MouseEvent) {
-    e.stopPropagation();
+  async function handleDelete(id: string) {
     if (!window.confirm("¿Eliminar este registro del historial? (borrado lógico, los datos se conservan)")) return;
     try {
       await deleteA1(id);
@@ -121,6 +122,23 @@ export function A1Pending() {
       }
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
+    }
+  }
+
+  async function handleClearAll() {
+    if (deletingAll) return;
+    if (!window.confirm("¿Eliminar TODO el historial de esta sección? (borrado lógico, los datos se conservan)")) return;
+    setDeletingAll(true);
+    try {
+      await deleteAllA1();
+      await fetchHistory();
+      setSelectedId(null);
+      setDetail(null);
+      setSearchResult(null);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
+    } finally {
+      setDeletingAll(false);
     }
   }
 
@@ -254,388 +272,346 @@ export function A1Pending() {
       {subView === "notas" ? (
         <NotesView method="a1_pending" />
       ) : (
-      <div className="grid grid-cols-1 lg:grid-cols-[18rem_1fr] gap-6">
-        {/* ── Left sidebar ── */}
-        <aside className="space-y-2">
-          <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-            <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-900">Suscripciones</h3>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400">{history.length}</span>
-                {history.length > 0 && (
-                  <button
-                    type="button"
-                    disabled={deletingAll}
-                    onClick={async () => {
-                      if (!window.confirm("¿Eliminar TODO el historial de esta sección? (borrado lógico, los datos se conservan)")) return;
-                      setDeletingAll(true);
-                      try {
-                        await deleteAllA1();
-                        await fetchHistory();
-                        setSelectedId(null);
-                        setDetail(null);
-                        setSearchResult(null);
-                      } catch (err) {
-                        window.alert(err instanceof Error ? err.message : "No se pudo eliminar");
-                      } finally {
-                        setDeletingAll(false);
-                      }
-                    }}
-                    className="text-xs text-red-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Eliminar todo
-                  </button>
-                )}
-              </div>
-            </div>
-            <ul className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
-              {history.length === 0 && (
-                <li className="px-4 py-3 text-xs text-gray-400 italic">None yet.</li>
+        <ThreeColumnLayout
+          sidebar={
+            <HistorySidebar
+              title="Suscripciones"
+              items={history}
+              selectedId={selectedId}
+              onSelect={selectSubscription}
+              getId={(s) => s.id}
+              onDelete={handleDelete}
+              onClearAll={handleClearAll}
+              renderItem={(sub) => (
+                <>
+                  <div className="font-mono text-gray-700 truncate">{sub.id.slice(0, 16)}…</div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <StatusBadge status={sub.status} />
+                    <span className="text-gray-400">
+                      {new Date(sub.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                </>
               )}
-              {history.map((sub) => (
-                <li key={sub.id} className="relative group">
-                  <button
-                    type="button"
-                    onClick={() => selectSubscription(sub.id)}
-                    className={[
-                      "w-full text-left px-4 py-3 text-xs hover:bg-gray-50 transition-colors pr-8",
-                      selectedId === sub.id ? "bg-blue-50 border-l-2 border-blue-500" : "",
-                    ].join(" ")}
-                  >
-                    <div className="font-mono text-gray-700 truncate">{sub.id.slice(0, 16)}…</div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <StatusBadge status={sub.status} />
-                      <span className="text-gray-400">
-                        {new Date(sub.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => void handleDelete(sub.id, e)}
-                    title="Eliminar del historial (borrado lógico)"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all p-1"
-                  >
-                    🗑
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </aside>
-
-        {/* ── Right main column ── */}
-        <div className="space-y-4 min-w-0">
-          {/* Create card */}
-          <Card title="Crear suscripción">
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
-                <input
-                  type="text"
-                  name="reason"
-                  value={form.reason}
-                  onChange={handleChange}
-                  required
-                  placeholder="Monthly plan"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Payer email</label>
-                <input
-                  type="email"
-                  name="payerEmail"
-                  value={form.payerEmail}
-                  onChange={handleChange}
-                  required
-                  placeholder="payer@example.com"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  External reference{" "}
-                  <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="text"
-                  name="externalReference"
-                  value={form.externalReference}
-                  onChange={handleChange}
-                  placeholder="order-123"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <fieldset className="border border-gray-200 rounded p-4 space-y-4">
-                <legend className="text-sm font-medium text-gray-700 px-1">Auto-recurring billing</legend>
-                <div className="flex gap-4">
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Frequency</label>
-                    <input
-                      type="number"
-                      name="frequency"
-                      value={form.frequency}
-                      onChange={handleChange}
-                      min="1"
-                      required
-                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                    <select
-                      name="frequencyType"
-                      value={form.frequencyType}
-                      onChange={handleChange}
-                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="months">months</option>
-                      <option value="days">days</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-                    <input
-                      type="number"
-                      name="amount"
-                      value={form.amount}
-                      onChange={handleChange}
-                      min="0.01"
-                      step="0.01"
-                      required
-                      placeholder="1000"
-                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div className="w-28">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
+            />
+          }
+          form={
+            <div className="space-y-4 min-w-0">
+              <Card title="Crear suscripción">
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
                     <input
                       type="text"
-                      name="currency"
-                      value={form.currency}
+                      name="reason"
+                      value={form.reason}
                       onChange={handleChange}
-                      maxLength={3}
-                      minLength={3}
-                      pattern="[A-Za-z]{3}"
                       required
+                      placeholder="Monthly plan"
                       className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Start date <span className="text-gray-400 font-normal">(defaults to tomorrow)</span>
-                  </label>
-                  <input
-                    type="datetime-local"
-                    name="startDate"
-                    value={form.startDate}
-                    onChange={handleChange}
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </fieldset>
-              <AdvancedSection>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Back URL <span className="text-gray-400 font-normal">(optional)</span>
-                  </label>
-                  <input
-                    type="url"
-                    name="backUrl"
-                    value={form.backUrl}
-                    onChange={handleChange}
-                    placeholder="https://example.com/return"
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    End date <span className="text-gray-400 font-normal">(autoRecurring.endDate, optional)</span>
-                  </label>
-                  <input
-                    type="datetime-local"
-                    name="endDate"
-                    value={form.endDate}
-                    onChange={handleChange}
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Repetitions <span className="text-gray-400 font-normal">(autoRecurring.repetitions, optional)</span>
-                  </label>
-                  <input
-                    type="number"
-                    name="repetitions"
-                    value={form.repetitions}
-                    onChange={handleChange}
-                    min="1"
-                    placeholder="e.g. 12"
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <fieldset className="border border-gray-100 rounded p-3 space-y-3">
-                  <legend className="text-xs font-medium text-gray-600 px-1">Free trial (optional — fill frequency to enable)</legend>
-                  <div className="flex gap-3">
-                    <div className="flex-1">
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Frequency</label>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Payer email</label>
+                    <input
+                      type="email"
+                      name="payerEmail"
+                      value={form.payerEmail}
+                      onChange={handleChange}
+                      required
+                      placeholder="payer@example.com"
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      External reference{" "}
+                      <span className="text-gray-400 font-normal">(optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="externalReference"
+                      value={form.externalReference}
+                      onChange={handleChange}
+                      placeholder="order-123"
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <fieldset className="border border-gray-200 rounded p-4 space-y-4">
+                    <legend className="text-sm font-medium text-gray-700 px-1">Auto-recurring billing</legend>
+                    <div className="flex gap-4">
+                      <div className="flex-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Frequency</label>
+                        <input
+                          type="number"
+                          name="frequency"
+                          value={form.frequency}
+                          onChange={handleChange}
+                          min="1"
+                          required
+                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                        <select
+                          name="frequencyType"
+                          value={form.frequencyType}
+                          onChange={handleChange}
+                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="months">months</option>
+                          <option value="days">days</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="flex-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                        <input
+                          type="number"
+                          name="amount"
+                          value={form.amount}
+                          onChange={handleChange}
+                          min="0.01"
+                          step="0.01"
+                          required
+                          placeholder="1000"
+                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div className="w-28">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
+                        <input
+                          type="text"
+                          name="currency"
+                          value={form.currency}
+                          onChange={handleChange}
+                          maxLength={3}
+                          minLength={3}
+                          pattern="[A-Za-z]{3}"
+                          required
+                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Start date <span className="text-gray-400 font-normal">(defaults to tomorrow)</span>
+                      </label>
+                      <input
+                        type="datetime-local"
+                        name="startDate"
+                        value={form.startDate}
+                        onChange={handleChange}
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </fieldset>
+                  <AdvancedSection>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Back URL <span className="text-gray-400 font-normal">(optional)</span>
+                      </label>
+                      <input
+                        type="url"
+                        name="backUrl"
+                        value={form.backUrl}
+                        onChange={handleChange}
+                        placeholder="https://example.com/return"
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        End date <span className="text-gray-400 font-normal">(autoRecurring.endDate, optional)</span>
+                      </label>
+                      <input
+                        type="datetime-local"
+                        name="endDate"
+                        value={form.endDate}
+                        onChange={handleChange}
+                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Repetitions <span className="text-gray-400 font-normal">(autoRecurring.repetitions, optional)</span>
+                      </label>
                       <input
                         type="number"
-                        name="freeTrialFrequency"
-                        value={form.freeTrialFrequency}
+                        name="repetitions"
+                        value={form.repetitions}
                         onChange={handleChange}
                         min="1"
-                        placeholder="e.g. 1"
+                        placeholder="e.g. 12"
                         className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
-                    <div className="flex-1">
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
-                      <select
-                        name="freeTrialFrequencyType"
-                        value={form.freeTrialFrequencyType}
-                        onChange={handleChange}
-                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="months">months</option>
-                        <option value="days">days</option>
-                      </select>
-                    </div>
-                    <div className="flex-1">
-                      <label className="block text-xs font-medium text-gray-700 mb-1">First invoice offset</label>
-                      <input
-                        type="number"
-                        name="freeTrialFirstInvoiceOffset"
-                        value={form.freeTrialFirstInvoiceOffset}
-                        onChange={handleChange}
-                        min="0"
-                        placeholder="e.g. 0"
-                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-                </fieldset>
-              </AdvancedSection>
-              {error && (
-                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-                  {error.message}
-                </p>
-              )}
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {submitting ? "Creating…" : "Create preapproval"}
-              </button>
-            </form>
-
-            {initPoint && (
-              <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded">
-                <p className="text-sm font-medium text-green-800 mb-1">Checkout ready</p>
-                <a
-                  href={initPoint}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-green-700 underline break-all hover:text-green-900"
-                >
-                  Open MP checkout (init_point)
-                </a>
-              </div>
-            )}
-
-            {createResult && <ResponsePanel data={createResult} />}
-          </Card>
-
-          {/* Search card */}
-          <Card title="Buscar por ID (GET subscription)">
-            <div className="space-y-3">
-              <p className="text-xs text-gray-500">
-                Triggers <code className="bg-gray-100 px-1 rounded">GET /:id/mp</code> and appends a new snapshot to the timeline.
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={searchMpId}
-                  onChange={(e) => setSearchMpId(e.target.value)}
-                  placeholder={selectedId ? `${selectedId.slice(0, 20)}… (selected)` : "Local subscription ID"}
-                  className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                  type="button"
-                  onClick={handleSearch}
-                  disabled={searching || (!searchMpId && !selectedId)}
-                  className="bg-gray-700 text-white rounded px-4 py-2 text-sm font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-                >
-                  {searching ? "Searching…" : "Search in MP"}
-                </button>
-              </div>
-              {searchError && (
-                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-                  {searchError}
-                </p>
-              )}
-              {searchResult !== null && <ResponsePanel data={searchResult} />}
-            </div>
-          </Card>
-
-          {/* Timeline card */}
-          <Card title="Timeline">
-            {selectedSub ? (
-              <div>
-                <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
-                  <span className="text-xs text-gray-500 font-mono">{selectedSub.id}</span>
-                  <StatusBadge status={selectedSub.status} />
-                  {selectedSub.status !== "cancelled" && (
-                    <button
-                      type="button"
-                      onClick={() => void handleCancel()}
-                      disabled={cancelling || detailLoading}
-                      className="ml-auto text-xs font-medium text-red-600 border border-red-300 rounded px-2 py-0.5 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      title="Cancelar en MercadoPago (irreversible)"
-                    >
-                      {cancelling ? "Cancelando…" : "Cancelar en MP"}
-                    </button>
+                    <fieldset className="border border-gray-100 rounded p-3 space-y-3">
+                      <legend className="text-xs font-medium text-gray-600 px-1">Free trial (optional — fill frequency to enable)</legend>
+                      <div className="flex gap-3">
+                        <div className="flex-1">
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Frequency</label>
+                          <input
+                            type="number"
+                            name="freeTrialFrequency"
+                            value={form.freeTrialFrequency}
+                            onChange={handleChange}
+                            min="1"
+                            placeholder="e.g. 1"
+                            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
+                          <select
+                            name="freeTrialFrequencyType"
+                            value={form.freeTrialFrequencyType}
+                            onChange={handleChange}
+                            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="months">months</option>
+                            <option value="days">days</option>
+                          </select>
+                        </div>
+                        <div className="flex-1">
+                          <label className="block text-xs font-medium text-gray-700 mb-1">First invoice offset</label>
+                          <input
+                            type="number"
+                            name="freeTrialFirstInvoiceOffset"
+                            value={form.freeTrialFirstInvoiceOffset}
+                            onChange={handleChange}
+                            min="0"
+                            placeholder="e.g. 0"
+                            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+                    </fieldset>
+                  </AdvancedSection>
+                  {error && (
+                    <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+                      {error.message}
+                    </p>
                   )}
                   <button
-                    type="button"
-                    onClick={() => { if (selectedId) void fetchDetail(selectedId); }}
-                    disabled={detailLoading}
-                    className={`${selectedSub.status !== "cancelled" ? "" : "ml-auto "}text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50`}
-                    title="Refetch timeline"
+                    type="submit"
+                    disabled={submitting}
+                    className="w-full bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {detailLoading ? "..." : "↻ Actualizar"}
+                    {submitting ? "Creating…" : "Create preapproval"}
                   </button>
+                </form>
+
+                {initPoint && (
+                  <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded">
+                    <p className="text-sm font-medium text-green-800 mb-1">Checkout ready</p>
+                    <a
+                      href={initPoint}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-green-700 underline break-all hover:text-green-900"
+                    >
+                      Open MP checkout (init_point)
+                    </a>
+                  </div>
+                )}
+
+                {createResult && <ResponsePanel data={createResult} />}
+              </Card>
+            </div>
+          }
+          data={
+            <>
+              {/* Search card */}
+              <Card title="Buscar por ID (GET subscription)">
+                <div className="space-y-3">
+                  <p className="text-xs text-gray-500">
+                    Triggers <code className="bg-gray-100 px-1 rounded">GET /:id/mp</code> and appends a new snapshot to the timeline.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={searchMpId}
+                      onChange={(e) => setSearchMpId(e.target.value)}
+                      placeholder={selectedId ? `${selectedId.slice(0, 20)}… (selected)` : "Local subscription ID"}
+                      className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSearch}
+                      disabled={searching || (!searchMpId && !selectedId)}
+                      className="bg-gray-700 text-white rounded px-4 py-2 text-sm font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                    >
+                      {searching ? "Searching…" : "Search in MP"}
+                    </button>
+                  </div>
+                  {searchError && (
+                    <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+                      {searchError}
+                    </p>
+                  )}
+                  {searchResult !== null && <ResponsePanel data={searchResult} />}
                 </div>
-                <TimelineView
-                  entries={detail?.timeline ?? []}
-                  loading={detailLoading}
-                />
-              </div>
-            ) : (
-              <p className="text-sm text-gray-400 italic">
-                Select a subscription from the sidebar to see its timeline.
-              </p>
-            )}
-          </Card>
+              </Card>
 
-          {/* Payments diagnostic card — only shown when a subscription is selected */}
-          {selectedId && <PaymentsDiag subscriptionId={selectedId} />}
+              {/* Timeline card */}
+              <Card title="Timeline">
+                {selectedSub ? (
+                  <div>
+                    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
+                      <span className="text-xs text-gray-500 font-mono">{selectedSub.id}</span>
+                      <StatusBadge status={selectedSub.status} />
+                      {selectedSub.status !== "cancelled" && (
+                        <button
+                          type="button"
+                          onClick={() => void handleCancel()}
+                          disabled={cancelling || detailLoading}
+                          className="ml-auto text-xs font-medium text-red-600 border border-red-300 rounded px-2 py-0.5 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          title="Cancelar en MercadoPago (irreversible)"
+                        >
+                          {cancelling ? "Cancelando…" : "Cancelar en MP"}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => { if (selectedId) void fetchDetail(selectedId); }}
+                        disabled={detailLoading}
+                        className={`${selectedSub.status !== "cancelled" ? "" : "ml-auto "}text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50`}
+                        title="Refetch timeline"
+                      >
+                        {detailLoading ? "..." : "↻ Actualizar"}
+                      </button>
+                    </div>
+                    <TimelineView
+                      entries={detail?.timeline ?? []}
+                      loading={detailLoading}
+                    />
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400 italic">
+                    Select a subscription from the sidebar to view its details, payments and webhooks.
+                  </p>
+                )}
+              </Card>
 
-          {/* Webhooks card */}
-          <Card title="Webhook Events (live feed)">
-            <p className="text-xs text-gray-500 mb-3">
-              Method-level feed including unattributed events. Per-subscription webhooks also appear in the Timeline above.
-              <span className="text-gray-400"> (polling every 5s)</span>
-            </p>
-            <WebhookList method="a1_pending" />
-          </Card>
-        </div>
-      </div>
+              {/* Payments diagnostic card — only shown when a subscription is selected */}
+              {selectedId && <PaymentsDiag subscriptionId={selectedId} />}
+
+              {/* Webhooks card */}
+              <Card title="Webhook Events (live feed)">
+                <p className="text-xs text-gray-500 mb-3">
+                  {selectedId
+                    ? `Live feed for subscription ${selectedId.slice(0, 8)}…`
+                    : "Method-level feed including unattributed events. Per-subscription webhooks also appear in the Timeline above."}
+                  <span className="text-gray-400"> (polling every 5s)</span>
+                </p>
+                <WebhookList method="a1_pending" subscriptionId={selectedId ?? undefined} />
+              </Card>
+            </>
+          }
+        />
       )}
     </div>
   );
