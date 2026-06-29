@@ -8,6 +8,7 @@ import {
 } from "../api.js";
 import type { TunnelCheckResponse } from "shared";
 import { MP_PUBLIC_KEY, mpEnvironment } from "../config.js";
+import { useSetting } from "../hooks/useSettings.js";
 
 /** Color-coded badge for a MercadoPago environment. */
 function EnvBadge({ environment }: { environment: MpEnvironment }) {
@@ -150,6 +151,13 @@ export function ConfigEnv() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [defaultLimit, setDefaultLimit] = useSetting<number>(
+    "pagination.defaultLimit",
+  );
+  const [sortDir, setSortDir] = useSetting<"asc" | "desc">(
+    "display.defaultSortDirection",
+  );
+
   useEffect(() => {
     getMpConfig()
       .then(setBackend)
@@ -171,6 +179,59 @@ export function ConfigEnv() {
 
   return (
     <div className="space-y-4">
+      <Card title="Preferencias de usuario">
+        <div className="space-y-3">
+          <div>
+            <label
+              htmlFor="settings-page-size"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Page size
+            </label>
+            <select
+              id="settings-page-size"
+              value={defaultLimit}
+              onChange={(e) => setDefaultLimit(Number(e.target.value))}
+              className="border border-gray-300 rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {[10, 20, 50, 100].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-400">
+              Default de paginación para listas que no especifiquen su propio
+              tamaño. Persistido en <span className="font-mono">settings:v1</span>{" "}
+              (localStorage).
+            </p>
+          </div>
+          <div>
+            <label
+              htmlFor="settings-sort-dir"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Default sort direction
+            </label>
+            <select
+              id="settings-sort-dir"
+              value={sortDir}
+              onChange={(e) =>
+                setSortDir(e.target.value as "asc" | "desc")
+              }
+              className="border border-gray-300 rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="asc">Ascending</option>
+              <option value="desc">Descending</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-400">
+              Persistido para uso futuro; el orden actual se resuelve en el
+              backend.
+            </p>
+          </div>
+        </div>
+      </Card>
+
       <div>
         <h2 className="text-xl font-semibold text-gray-900">
           Variables de entorno · MercadoPago
