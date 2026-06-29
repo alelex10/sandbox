@@ -12,14 +12,15 @@ type Tab = {
   to: string;
 };
 
-// Tab order mirrors the design's route table. Notes routes to a generic
-// `NotesView` placeholder — proper per-method routing lands in PR5.
+// Tab order mirrors the design's route table. The /notes route carries the
+// method in the URL (e.g. /notes?method=a1_pending) — NotesView reads it
+// from the search params (PR4 deviation #1 closed in PR5).
 const TABS: Tab[] = [
   { label: "A.1 Preapproval Pending", to: "/a1" },
   { label: "A.2 Preapproval Authorized", to: "/a2" },
   { label: "A.3 Preapproval Plan", to: "/a3/subs" },
   { label: "B Orders", to: "/b" },
-  { label: "📝 Notes", to: "/notes" },
+  { label: "📝 Notes", to: "/notes?method=a1_pending" },
   { label: "🐞 Errors", to: "/errors" },
   { label: "⚙︎ Config / Env", to: "/config" },
 ];
@@ -68,7 +69,7 @@ export function App() {
           <Route path="/a3/subs/:subId" element={<A3Plan section="subs" />} />
           <Route path="/b" element={<BOrders />} />
           <Route path="/b/:id" element={<BOrders />} />
-          <Route path="/notes" element={<NotesView method="a1_pending" />} />
+          <Route path="/notes" element={<NotesView />} />
           <Route path="/errors" element={<ErrorsView />} />
           <Route path="/config" element={<ConfigEnv />} />
           <Route path="*" element={<Navigate to="/a1" replace />} />
