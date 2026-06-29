@@ -295,3 +295,39 @@ export const NoteResponse = z.object({
   deletedAt: z.string().nullable(),
 });
 export type NoteResponse = z.infer<typeof NoteResponse>;
+
+// ---------------------------------------------------------------------------
+// Pagination
+// ---------------------------------------------------------------------------
+
+// Query string contract: `?page=N&limit=M` (page default 1, min 1;
+// limit default 20, min 1, max 100). `z.coerce.number()` accepts both
+// `?page=2` and `?page=2&page=...` quirks by stringifying. Validation is
+// strict at the type level; `parsePagination()` does the runtime clamping
+// (see apps/api/src/lib/pagination.ts) so that out-of-range or non-integer
+// values are silently clamped rather than rejected — see the spec scenario
+// "?limit=500 and ?page=0 clamps limit to 100 and page to 1".
+export const PaginationQuery = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+export type PaginationQuery = z.infer<typeof PaginationQuery>;
+
+// Wire envelope returned by every paginated list endpoint.
+export interface PaginationEnvelope<T> {
+  items: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+// Runtime schema factory — wrap any item schema to validate the envelope.
+export const PaginationEnvelopeSchema = <T extends z.ZodTypeAny>(item: T) =>
+  z.object({
+    items: z.array(item),
+    total: z.number().int().nonnegative(),
+    page: z.number().int().min(1),
+    limit: z.number().int().min(1),
+    totalPages: z.number().int().nonnegative(),
+  });
