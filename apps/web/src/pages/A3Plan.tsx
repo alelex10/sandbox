@@ -1458,8 +1458,15 @@ function SuscripcionesView({
 // A3Plan page — root with sub-view toggle
 // ---------------------------------------------------------------------------
 
-export function A3Plan() {
-  const [subView, setSubView] = useState<SubView>("planes");
+export function A3Plan({ section }: { section?: "plans" | "subs" } = {}) {
+  // Map router-driven `section` to the internal `SubView` so the URL drives
+  // which sub-view opens by default. The user can still toggle freely with
+  // the SubViewToggle — making the toggle URL-aware lands in PR5.
+  const initialSubView: SubView = section === "subs" ? "suscripciones" : "planes";
+  const [subView, setSubView] = useState<SubView>(initialSubView);
+  useEffect(() => {
+    setSubView(initialSubView);
+  }, [section]);
   const [plans, setPlans] = useState<PlanResponse[]>([]);
   const [subscriptions, setSubscriptions] = useState<SubscriptionResponse[]>([]);
 
