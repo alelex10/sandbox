@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { PaginationEnvelope } from "shared";
+import { useSetting } from "./useSettings.js";
 
 interface UsePaginatedQueryOptions<T> {
   /**
@@ -56,12 +57,17 @@ function clampPage(raw: string | null): number {
 export function usePaginatedQuery<T>({
   fetcher,
   filterDeps,
-  defaultLimit = DEFAULT_LIMIT,
+  defaultLimit,
 }: UsePaginatedQueryOptions<T>): UsePaginatedQueryResult<T> {
+  // Explicit `defaultLimit` prop always wins; otherwise fall back to the user
+  // setting, then the in-code default.
+  const [settingDefaultLimit] = useSetting<number>("pagination.defaultLimit");
+  const effectiveDefaultLimit = defaultLimit ?? settingDefaultLimit ?? DEFAULT_LIMIT;
+
   const [searchParams, setSearchParams] = useSearchParams();
 
   const page = clampPage(searchParams.get("page"));
-  const limit = clampLimit(searchParams.get("limit"), defaultLimit);
+  const limit = clampLimit(searchParams.get("limit"), effectiveDefaultLimit);
 
   const [data, setData] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
