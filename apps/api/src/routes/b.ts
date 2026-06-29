@@ -4,6 +4,7 @@ import { createPaymentProfile, chargeOrder } from "payments";
 import { db } from "../db.js";
 import { env } from "../config.js";
 import { tryJsonParse } from "../util.js";
+import { paginate, parsePagination } from "../lib/pagination.js";
 
 export const bRouter = Router();
 
@@ -220,45 +221,32 @@ bRouter.post("/charge", async (req: Request, res: Response, next: NextFunction) 
   }
 });
 
-// GET /b — list all b_orders subscriptions with their charges and webhook events
-bRouter.get("/", async (_req: Request, res: Response, next: NextFunction) => {
+// GET /b — list all b_orders subscriptions (paginated)
+bRouter.get("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const subscriptions = await db.subscription.findMany({
-      where: { method: "b_orders", deletedAt: null },
-      include: {
-        charges: { orderBy: { createdAt: "desc" } },
-        events: { where: { deletedAt: null }, orderBy: { receivedAt: "desc" } },
+    const { page, limit } = parsePagination(req.query);
+    const envelope = await paginate(
+      db.subscription,
+      {
+        where: { method: "b_orders", deletedAt: null },
+        orderBy: { createdAt: "desc" },
       },
-      orderBy: { createdAt: "desc" },
+      { page, limit },
+    );
+
+    res.json({
+      ...envelope,
+      items: envelope.items.map((s) => ({
+        id: s.id,
+        method: s.method,
+        status: s.status,
+        paymentProfileId: s.paymentProfileId,
+        customerId: s.customerId,
+        tokenization: s.tokenization,
+        rawCreate: tryJsonParse(s.rawCreate),
+        createdAt: s.createdAt.toISOString(),
+      })),
     });
-
-    const result = subscriptions.map((s) => ({
-      id: s.id,
-      method: s.method,
-      status: s.status,
-      paymentProfileId: s.paymentProfileId,
-      customerId: s.customerId,
-      tokenization: s.tokenization,
-      rawCreate: tryJsonParse(s.rawCreate),
-      createdAt: s.createdAt.toISOString(),
-      charges: s.charges.map((c) => ({
-        id: c.id,
-        mpOrderId: c.mpOrderId,
-        amount: c.amount,
-        status: c.status,
-        sequenceNumber: c.sequenceNumber,
-        rawResponse: tryJsonParse(c.rawResponse),
-        createdAt: c.createdAt.toISOString(),
-      })),
-      events: s.events.map((ev) => ({
-        ...ev,
-        rawBody: tryJsonParse(ev.rawBody as string | null),
-        rawFetched: tryJsonParse(ev.rawFetched as string | null),
-        receivedAt: ev.receivedAt.toISOString(),
-      })),
-    }));
-
-    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -371,7 +359,7 @@ bRouter.get(
   },
 );
 
-// GET /b/:id/charges — list all OrderCharge rows for a subscription
+// GET /b/:id/charges — list all OrderCharge rows for a subscription (paginated)
 bRouter.get("/:id/charges", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const subscription = await db.subscription.findUnique({
@@ -383,23 +371,29 @@ bRouter.get("/:id/charges", async (req: Request, res: Response, next: NextFuncti
       return;
     }
 
-    const charges = await db.orderCharge.findMany({
-      where: { subscriptionId: req.params.id },
-      orderBy: { createdAt: "desc" },
+    const { page, limit } = parsePagination(req.query);
+    const envelope = await paginate(
+      db.orderCharge,
+      {
+        where: { subscriptionId: req.params.id },
+        orderBy: { createdAt: "desc" },
+      },
+      { page, limit },
+    );
+
+    res.json({
+      ...envelope,
+      items: envelope.items.map((c) => ({
+        id: c.id,
+        subscriptionId: c.subscriptionId,
+        mpOrderId: c.mpOrderId,
+        amount: c.amount,
+        status: c.status,
+        sequenceNumber: c.sequenceNumber,
+        rawResponse: tryJsonParse(c.rawResponse),
+        createdAt: c.createdAt.toISOString(),
+      })),
     });
-
-    const result = charges.map((c) => ({
-      id: c.id,
-      subscriptionId: c.subscriptionId,
-      mpOrderId: c.mpOrderId,
-      amount: c.amount,
-      status: c.status,
-      sequenceNumber: c.sequenceNumber,
-      rawResponse: tryJsonParse(c.rawResponse),
-      createdAt: c.createdAt.toISOString(),
-    }));
-
-    res.json(result);
   } catch (err) {
     next(err);
   }
