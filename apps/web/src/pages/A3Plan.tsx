@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ResponsePanel } from "../components/ResponsePanel.js";
 import { WebhookList } from "../components/WebhookList.js";
@@ -10,9 +10,12 @@ import { CardFormMpJs } from "../components/CardFormMpJs.js";
 import { CardBrick } from "../components/CardBrick.js";
 import { SubViewToggle } from "../components/SubViewToggle.js";
 import { NotesView } from "../components/NotesView.js";
-import { ThreeColumnLayout } from "../components/ThreeColumnLayout.js";
 import { HistorySidebar } from "../components/HistorySidebar.js";
 import { Pagination } from "../components/Pagination.js";
+import { Drawer } from "../components/Drawer.js";
+import { Fab } from "../components/Fab.js";
+import { MasterDetail } from "../components/MasterDetail.js";
+import { EditPlanDrawer } from "../components/EditPlanDrawer.js";
 import {
   createPlan,
   listA3Plans,
@@ -40,6 +43,7 @@ import type {
 } from "shared";
 import { MP_PUBLIC_KEY as PUBLIC_KEY } from "../config.js";
 import { PaymentsDiag } from "../components/PaymentsDiag.js";
+import { buildDefaultReason } from "shared";
 import { usePaginatedQuery } from "../hooks/usePaginatedQuery.js";
 
 type SubViewKey = "planes" | "suscripciones" | "notas";
@@ -146,6 +150,11 @@ function PlanesView({
   const [planDetail, setPlanDetail] = useState<PlanDetailResponse | null>(null);
   const [planDetailLoading, setPlanDetailLoading] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
+  // Drawers are transient UI state. Not in the URL. Both close on URL change
+  // (see the selectedPlanId-effect below) so a stale form never appears on
+  // a different plan when the user clicks another item in the sidebar.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editDrawerOpen, setEditDrawerOpen] = useState(false);
 
   // Create plan form
   const [planForm, setPlanForm] = useState<PlanFormState>({
@@ -197,8 +206,17 @@ function PlanesView({
     } else {
       setPlanDetail(null);
       setMpSearchResult(null);
+      setMpSearchError(null);
     }
   }, [selectedPlanId, fetchPlanDetail]);
+
+  // Auto-close both drawers on URL change. Stops a stale form from appearing
+  // on a different plan when the user clicks another item in the sidebar.
+  // (Spec: "drawer auto-closes on URL change".)
+  useEffect(() => {
+    setDrawerOpen(false);
+    setEditDrawerOpen(false);
+  }, [selectedPlanId]);
 
   async function handleDeletePlan(id: string) {
     if (!window.confirm("¿Eliminar este registro del historial? (borrado lógico, los datos se conservan)")) return;
@@ -284,7 +302,10 @@ function PlanesView({
       const created = await createPlan(payload);
       setPlanResult(created);
       onPlansRefresh();
-      // Auto-select the newly created plan
+      // Close the drawer, then auto-navigate to the newly created plan.
+      // The drawer must close BEFORE navigate so the URL change triggers
+      // the auto-close effect's no-op (drawer is already closed).
+      setDrawerOpen(false);
       navigate(`/a3/plans/${encodeURIComponent(created.id)}`);
     } catch (err) {
       setPlanError(err instanceof Error ? err : new Error("Request failed"));
@@ -313,7 +334,8 @@ function PlanesView({
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
 
   return (
-    <ThreeColumnLayout
+    <>
+    <MasterDetail
       sidebar={
         <HistorySidebar
           title="Planes guardados"
@@ -351,291 +373,27 @@ function PlanesView({
           )}
         />
       }
-      form={
-        <div className="space-y-4 min-w-0">
-          <Card title="Crear plan (PreApprovalPlan)">
-            <form onSubmit={handleCreatePlan} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
-                <input
-                  type="text"
-                  value={planForm.reason}
-                  onChange={(e) => setPlanForm((prev) => ({ ...prev, reason: e.target.value }))}
-                  required
-                  placeholder="Monthly premium plan"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <fieldset className="border border-gray-200 rounded p-4 space-y-4">
-                <legend className="text-sm font-medium text-gray-700 px-1">
-                  Auto-recurring billing
-                </legend>
-                <div className="flex gap-4">
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Frequency
-                    </label>
-                    <input
-                      type="number"
-                      value={planForm.frequency}
-                      onChange={(e) =>
-                        setPlanForm((prev) => ({ ...prev, frequency: e.target.value }))
-                      }
-                      min="1"
-                      required
-                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                    <select
-                      value={planForm.frequencyType}
-                      onChange={(e) =>
-                        setPlanForm((prev) => ({
-                          ...prev,
-                          frequencyType: e.target.value as "months" | "days",
-                        }))
-                      }
-                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="months">months</option>
-                      <option value="days">days</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="flex gap-4">
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-                    <input
-                      type="number"
-                      value={planForm.amount}
-                      onChange={(e) =>
-                        setPlanForm((prev) => ({ ...prev, amount: e.target.value }))
-                      }
-                      min="0.01"
-                      step="0.01"
-                      required
-                      placeholder="1000"
-                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div className="w-28">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Currency
-                    </label>
-                    <input
-                      type="text"
-                      value={planForm.currency}
-                      onChange={(e) =>
-                        setPlanForm((prev) => ({ ...prev, currency: e.target.value }))
-                      }
-                      maxLength={3}
-                      minLength={3}
-                      pattern="[A-Za-z]{3}"
-                      required
-                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Billing day{" "}
-                    <span className="text-gray-400 font-normal">(optional, 1–28)</span>
-                  </label>
-                  <input
-                    type="number"
-                    value={planForm.billingDay}
-                    onChange={(e) =>
-                      setPlanForm((prev) => ({ ...prev, billingDay: e.target.value }))
-                    }
-                    min="1"
-                    max="28"
-                    placeholder="Leave empty for default"
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <label className="flex items-start gap-2 text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={planForm.billingDayProportional}
-                    onChange={(e) =>
-                      setPlanForm((prev) => ({
-                        ...prev,
-                        billingDayProportional: e.target.checked,
-                      }))
-                    }
-                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span>
-                    Cobro proporcional{" "}
-                    <span className="text-gray-400 font-normal">
-                      (billing_day_proportional — cobra proporcional el período
-                      parcial hasta el billing day; solo aplica a planes mensuales
-                      con billing day)
-                    </span>
-                  </span>
-                </label>
-              </fieldset>
-              <AdvancedSection>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Back URL <span className="text-gray-400 font-normal">(optional)</span>
-                  </label>
-                  <input
-                    type="url"
-                    value={planForm.backUrl}
-                    onChange={(e) => setPlanForm((prev) => ({ ...prev, backUrl: e.target.value }))}
-                    placeholder="https://example.com/return"
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    End date <span className="text-gray-400 font-normal">(autoRecurring.endDate, optional)</span>
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={planForm.endDate}
-                    onChange={(e) => setPlanForm((prev) => ({ ...prev, endDate: e.target.value }))}
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Repetitions <span className="text-gray-400 font-normal">(autoRecurring.repetitions, optional)</span>
-                  </label>
-                  <input
-                    type="number"
-                    value={planForm.repetitions}
-                    onChange={(e) => setPlanForm((prev) => ({ ...prev, repetitions: e.target.value }))}
-                    min="1"
-                    placeholder="e.g. 12"
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <fieldset className="border border-gray-100 rounded p-3 space-y-3">
-                  <legend className="text-xs font-medium text-gray-600 px-1">Free trial (optional — fill frequency to enable)</legend>
-                  <div className="flex gap-3">
-                    <div className="flex-1">
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Frequency</label>
-                      <input
-                        type="number"
-                        value={planForm.freeTrialFrequency}
-                        onChange={(e) => setPlanForm((prev) => ({ ...prev, freeTrialFrequency: e.target.value }))}
-                        min="1"
-                        placeholder="e.g. 1"
-                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
-                      <select
-                        value={planForm.freeTrialFrequencyType}
-                        onChange={(e) => setPlanForm((prev) => ({ ...prev, freeTrialFrequencyType: e.target.value as "months" | "days" }))}
-                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="months">months</option>
-                        <option value="days">days</option>
-                      </select>
-                    </div>
-                    <div className="flex-1">
-                      <label className="block text-xs font-medium text-gray-700 mb-1">First invoice offset</label>
-                      <input
-                        type="number"
-                        value={planForm.freeTrialFirstInvoiceOffset}
-                        onChange={(e) => setPlanForm((prev) => ({ ...prev, freeTrialFirstInvoiceOffset: e.target.value }))}
-                        min="0"
-                        placeholder="e.g. 0"
-                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-                </fieldset>
-                <div>
-                  <p className="text-xs font-medium text-gray-700 mb-2">Payment types allowed</p>
-                  <div className="flex flex-wrap gap-3">
-                    {(["credit_card", "debit_card", "ticket", "bank_transfer"] as const).map((pt) => (
-                      <label key={pt} className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={planForm.paymentTypesAllowed.includes(pt)}
-                          onChange={(e) =>
-                            setPlanForm((prev) => ({
-                              ...prev,
-                              paymentTypesAllowed: e.target.checked
-                                ? [...prev.paymentTypesAllowed, pt]
-                                : prev.paymentTypesAllowed.filter((x) => x !== pt),
-                            }))
-                          }
-                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        {pt}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-gray-700 mb-2">Payment methods allowed</p>
-                  <div className="flex flex-wrap gap-3">
-                    {(["visa", "master", "amex", "naranja", "cabal"] as const).map((pm) => (
-                      <label key={pm} className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={planForm.paymentMethodsAllowed.includes(pm)}
-                          onChange={(e) =>
-                            setPlanForm((prev) => ({
-                              ...prev,
-                              paymentMethodsAllowed: e.target.checked
-                                ? [...prev.paymentMethodsAllowed, pm]
-                                : prev.paymentMethodsAllowed.filter((x) => x !== pm),
-                            }))
-                          }
-                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        {pm}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </AdvancedSection>
-              {planError && (
-                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-                  {planError.message}
-                </p>
-              )}
-              <button
-                type="submit"
-                disabled={planSubmitting}
-                className="w-full bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {planSubmitting ? "Creating…" : "Create plan"}
-              </button>
-            </form>
-            {planResult && (
-              <div className="mt-4 space-y-3">
-                {planResult.initPoint && (
-                  <div className="bg-blue-50 border border-blue-200 rounded px-4 py-3">
-                    <p className="text-xs font-semibold text-blue-700 mb-1 uppercase tracking-wide">
-                      Plan init_point (public checkout link)
-                    </p>
-                    <a
-                      href={planResult.initPoint}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-blue-600 underline break-all hover:text-blue-800"
-                    >
-                      {planResult.initPoint}
-                    </a>
-                  </div>
-                )}
-                <ResponsePanel data={planResult} />
-              </div>
-            )}
-          </Card>
-        </div>
-      }
-      data={
+      detail={
         <>
+          {/* Plan init_point banner — only for the plan the user just
+              created in this session. Drawer closes on submit success,
+              so this is where the init_point link surfaces. */}
+          {planResult && planResult.id === selectedPlanId && planResult.initPoint && (
+            <Card title="Plan init_point (public checkout link)">
+              <p className="text-xs text-gray-500 mb-2">
+                El pagador debe abrir el siguiente enlace para suscribirse al plan.
+              </p>
+              <a
+                href={planResult.initPoint}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-blue-600 underline break-all hover:text-blue-800"
+              >
+                {planResult.initPoint}
+              </a>
+            </Card>
+          )}
+
           {/* Search plan in MP */}
           <Card title="Buscar plan en MP (GET)">
             <div className="space-y-3">
@@ -688,31 +446,30 @@ function PlanesView({
                       MP: {selectedPlan.mpPlanId}
                     </span>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (selectedPlanId) void fetchPlanDetail(selectedPlanId);
-                    }}
-                    disabled={planDetailLoading}
-                    className="ml-auto text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50 shrink-0"
-                    title="Refetch timeline"
-                  >
-                    {planDetailLoading ? "..." : "↻ Actualizar"}
-                  </button>
-                </div>
-                {selectedPlan.initPoint && (
-                  <div className="mb-4 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
-                    <a
-                      href={selectedPlan.initPoint}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline font-medium"
+                  <div className="ml-auto flex items-center gap-2 shrink-0">
+                    {selectedPlan?.mpPlanId && (
+                      <button
+                        type="button"
+                        onClick={() => setEditDrawerOpen(true)}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        title="Editar plan en MP"
+                      >
+                        Editar plan
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selectedPlanId) void fetchPlanDetail(selectedPlanId);
+                      }}
+                      disabled={planDetailLoading}
+                      className="text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                      title="Refetch timeline"
                     >
-                      Abrir link público del plan
-                    </a>
-                    <span className="ml-2 text-blue-500 break-all">{selectedPlan.initPoint}</span>
+                      {planDetailLoading ? "..." : "↻ Actualizar"}
+                    </button>
                   </div>
-                )}
+                </div>
                 <TimelineView
                   entries={planDetail?.timeline ?? []}
                   loading={planDetailLoading}
@@ -725,18 +482,315 @@ function PlanesView({
             )}
           </Card>
 
-          {/* Webhooks card — plan-scoped. NO PaymentsDiag and NO cancel button: plans are not cancelled in MP. */}
-          <Card title="Webhook Events (live feed)">
-            <p className="text-xs text-gray-500 mb-3">
-              {selectedPlanId
-                ? "Live feed for all subscriptions of this plan."
-                : "Method-level feed including unattributed events."}
-            </p>
-            <WebhookList method="a3_plan" planId={selectedPlanId ?? undefined} />
-          </Card>
+          {/* Webhook card — hidden when no :planId is selected. The "method-level
+              feed including unattributed events" copy is gone: on A.3 plans
+              webhooks are only meaningful per-plan. */}
+          {selectedPlanId && (
+            <Card title="Webhook Events (live feed)">
+              <p className="text-xs text-gray-500 mb-3">
+                Live feed for all subscriptions of this plan.
+              </p>
+              <WebhookList method="a3_plan" planId={selectedPlanId} />
+            </Card>
+          )}
         </>
       }
+      fab={
+        <Fab
+          onClick={() => setDrawerOpen(true)}
+          label="Nuevo plan"
+        />
+      }
     />
+
+    {/* Drawer is always mounted; `open` controls visibility. Children
+        unmount on close (form state is discarded on every open, per
+        the design's contract). `dismissable={!planSubmitting}` locks
+        the drawer only while the create-plan POST is in flight. The
+        X button is always visible (disabled during submit) so the
+        user always sees the escape affordance. The plan form has no
+        tokenization, so no special Brick lifecycle is needed. */}
+    {/* Edit plan drawer — only renders when a plan with mpPlanId is selected */}
+    {selectedPlan && (
+      <EditPlanDrawer
+        open={editDrawerOpen}
+        onClose={() => setEditDrawerOpen(false)}
+        plan={selectedPlan}
+        prefillSource={planDetail?.rawLastSearch ?? planDetail?.rawCreate ?? null}
+        onUpdated={(updated) => {
+          setPlanResult(updated);
+          void fetchPlanDetail(selectedPlanId!);
+          onPlansRefresh();
+        }}
+      />
+    )}
+
+    <Drawer
+      open={drawerOpen}
+      onClose={() => setDrawerOpen(false)}
+      title="Crear plan (PreApprovalPlan)"
+      dismissable={!planSubmitting}
+      width="default"
+    >
+      <form onSubmit={handleCreatePlan} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+          <input
+            type="text"
+            value={planForm.reason}
+            onChange={(e) => setPlanForm((prev) => ({ ...prev, reason: e.target.value }))}
+            required
+            placeholder="Monthly premium plan"
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <fieldset className="border border-gray-200 rounded p-4 space-y-4">
+          <legend className="text-sm font-medium text-gray-700 px-1">
+            Auto-recurring billing
+          </legend>
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Frequency
+              </label>
+              <input
+                type="number"
+                value={planForm.frequency}
+                onChange={(e) =>
+                  setPlanForm((prev) => ({ ...prev, frequency: e.target.value }))
+                }
+                min="1"
+                required
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+              <select
+                value={planForm.frequencyType}
+                onChange={(e) =>
+                  setPlanForm((prev) => ({
+                    ...prev,
+                    frequencyType: e.target.value as "months" | "days",
+                  }))
+                }
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="months">months</option>
+                <option value="days">days</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+              <input
+                type="number"
+                value={planForm.amount}
+                onChange={(e) =>
+                  setPlanForm((prev) => ({ ...prev, amount: e.target.value }))
+                }
+                min="0.01"
+                step="0.01"
+                required
+                placeholder="1000"
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="w-28">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Currency
+              </label>
+              <input
+                type="text"
+                value={planForm.currency}
+                onChange={(e) =>
+                  setPlanForm((prev) => ({ ...prev, currency: e.target.value }))
+                }
+                maxLength={3}
+                minLength={3}
+                pattern="[A-Za-z]{3}"
+                required
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Billing day{" "}
+              <span className="text-gray-400 font-normal">(optional, 1–28)</span>
+            </label>
+            <input
+              type="number"
+              value={planForm.billingDay}
+              onChange={(e) =>
+                setPlanForm((prev) => ({ ...prev, billingDay: e.target.value }))
+              }
+              min="1"
+              max="28"
+              placeholder="Leave empty for default"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <label className="flex items-start gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={planForm.billingDayProportional}
+              onChange={(e) =>
+                setPlanForm((prev) => ({
+                  ...prev,
+                  billingDayProportional: e.target.checked,
+                }))
+              }
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>
+              Cobro proporcional{" "}
+              <span className="text-gray-400 font-normal">
+                (billing_day_proportional — cobra proporcional el período
+                parcial hasta el billing day; solo aplica a planes mensuales
+                con billing day)
+              </span>
+            </span>
+          </label>
+        </fieldset>
+        <AdvancedSection>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Back URL <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              type="url"
+              value={planForm.backUrl}
+              onChange={(e) => setPlanForm((prev) => ({ ...prev, backUrl: e.target.value }))}
+              placeholder="https://example.com/return"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              End date <span className="text-gray-400 font-normal">(autoRecurring.endDate, optional)</span>
+            </label>
+            <input
+              type="datetime-local"
+              value={planForm.endDate}
+              onChange={(e) => setPlanForm((prev) => ({ ...prev, endDate: e.target.value }))}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Repetitions <span className="text-gray-400 font-normal">(autoRecurring.repetitions, optional)</span>
+            </label>
+            <input
+              type="number"
+              value={planForm.repetitions}
+              onChange={(e) => setPlanForm((prev) => ({ ...prev, repetitions: e.target.value }))}
+              min="1"
+              placeholder="e.g. 12"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <fieldset className="border border-gray-100 rounded p-3 space-y-3">
+            <legend className="text-xs font-medium text-gray-600 px-1">Free trial (optional — fill frequency to enable)</legend>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-700 mb-1">Frequency</label>
+                <input
+                  type="number"
+                  value={planForm.freeTrialFrequency}
+                  onChange={(e) => setPlanForm((prev) => ({ ...prev, freeTrialFrequency: e.target.value }))}
+                  min="1"
+                  placeholder="e.g. 1"
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
+                <select
+                  value={planForm.freeTrialFrequencyType}
+                  onChange={(e) => setPlanForm((prev) => ({ ...prev, freeTrialFrequencyType: e.target.value as "months" | "days" }))}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="months">months</option>
+                  <option value="days">days</option>
+                </select>
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-700 mb-1">First invoice offset</label>
+                <input
+                  type="number"
+                  value={planForm.freeTrialFirstInvoiceOffset}
+                  onChange={(e) => setPlanForm((prev) => ({ ...prev, freeTrialFirstInvoiceOffset: e.target.value }))}
+                  min="0"
+                  placeholder="e.g. 0"
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          </fieldset>
+          <div>
+            <p className="text-xs font-medium text-gray-700 mb-2">Payment types allowed</p>
+            <div className="flex flex-wrap gap-3">
+              {(["credit_card", "debit_card", "ticket", "bank_transfer"] as const).map((pt) => (
+                <label key={pt} className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={planForm.paymentTypesAllowed.includes(pt)}
+                    onChange={(e) =>
+                      setPlanForm((prev) => ({
+                        ...prev,
+                        paymentTypesAllowed: e.target.checked
+                          ? [...prev.paymentTypesAllowed, pt]
+                          : prev.paymentTypesAllowed.filter((x) => x !== pt),
+                      }))
+                    }
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  {pt}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-gray-700 mb-2">Payment methods allowed</p>
+            <div className="flex flex-wrap gap-3">
+              {(["visa", "master", "amex", "naranja", "cabal"] as const).map((pm) => (
+                <label key={pm} className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={planForm.paymentMethodsAllowed.includes(pm)}
+                    onChange={(e) =>
+                      setPlanForm((prev) => ({
+                        ...prev,
+                        paymentMethodsAllowed: e.target.checked
+                          ? [...prev.paymentMethodsAllowed, pm]
+                          : prev.paymentMethodsAllowed.filter((x) => x !== pm),
+                      }))
+                    }
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  {pm}
+                </label>
+              ))}
+            </div>
+          </div>
+        </AdvancedSection>
+        {planError && (
+          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+            {planError.message}
+          </p>
+        )}
+        <button
+          type="submit"
+          disabled={planSubmitting}
+          className="w-full bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {planSubmitting ? "Creating…" : "Create plan"}
+        </button>
+      </form>
+    </Drawer>
+    </>
   );
 }
 
@@ -774,6 +828,45 @@ function SuscripcionesView({
   const [deletingAll, setDeletingAll] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
+  // Drawer is a transient UI state. Not in the URL. Closes on URL change
+  // (see the selectedId-effect below) so a stale form never appears on a
+  // different subscription when the user clicks another item in the sidebar.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Cancel-menu state (Timeline header `…` overflow). Same outside-click
+  // close pattern as the HistorySidebar's `…` menu and the A.2 PR2a pattern.
+  const [cancelMenuOpen, setCancelMenuOpen] = useState(false);
+  const cancelMenuRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!cancelMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (cancelMenuRef.current && !cancelMenuRef.current.contains(e.target as Node)) {
+        setCancelMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [cancelMenuOpen]);
+
+  // Typed-confirm state for "Cancelar en MP". Spec: user must type the
+  // literal string `CANCELAR` exactly before the cancel request fires.
+  // We use a small inline native <dialog> (rendered conditionally) so we
+  // have full control over the input + confirm button — `window.prompt`
+  // can't enforce "button must be disabled until the input matches".
+  const [typedConfirmOpen, setTypedConfirmOpen] = useState(false);
+  const [typedConfirmValue, setTypedConfirmValue] = useState("");
+  const typedConfirmRef = useRef<HTMLDialogElement | null>(null);
+  // Open / close the typed-confirm <dialog> in sync with `typedConfirmOpen`.
+  useEffect(() => {
+    const dialog = typedConfirmRef.current;
+    if (!dialog) return;
+    if (typedConfirmOpen) {
+      if (!dialog.open) dialog.showModal();
+    } else {
+      if (dialog.open) dialog.close();
+    }
+  }, [typedConfirmOpen]);
+
   // Subscribe form
   const [selectedPlanMpId, setSelectedPlanMpId] = useState("");
   const [payerEmail, setPayerEmail] = useState("");
@@ -787,7 +880,38 @@ function SuscripcionesView({
   const [subResult, setSubResult] = useState<SubscribeResult | null>(null);
   // Advanced subscribe fields — top-level
   const [subBackUrl, setSubBackUrl] = useState("");
-  const [subReason, setSubReason] = useState("");
+  // T6 — visual pre-fill: subReason is initialized with the computed default
+  // for the current branch (api + tokenized, or redirect). The form tracks
+  // pristine state; if the user doesn't touch the field, submit sends empty
+  // so the API fills in the real seq.
+  const [subReason, setSubReason] = useState(() =>
+    buildDefaultReason({
+      type: "A.3",
+      channel: cardTokenId !== null ? "tokenizacion" : "checkout_pro",
+      tokenization: cardTokenId !== null ? tokenizationMode : undefined,
+      paymentMethod: cardTokenId !== null ? "card" : "pending",
+      seq: "0001",
+    }),
+  );
+  const [isSubReasonPristine, setIsSubReasonPristine] = useState(true);
+
+  // Keep the pre-filled subReason in sync with the current branch (api vs
+  // redirect) and the tokenizationMode. The user owns the field once they
+  // touch it — `isSubReasonPristine` flips false in the input's onChange.
+  useEffect(() => {
+    if (isSubReasonPristine) {
+      const hasCardToken = cardTokenId !== null;
+      setSubReason(
+        buildDefaultReason({
+          type: "A.3",
+          channel: hasCardToken ? "tokenizacion" : "checkout_pro",
+          tokenization: hasCardToken ? tokenizationMode : undefined,
+          paymentMethod: hasCardToken ? "card" : "pending",
+          seq: "0001",
+        }),
+      );
+    }
+  }, [cardTokenId, tokenizationMode, isSubReasonPristine]);
   // auto_recurring override (empirical probe — any subset; empty fields are omitted)
   const [orAmount, setOrAmount] = useState("");
   const [orFrequency, setOrFrequency] = useState("");
@@ -831,6 +955,13 @@ function SuscripcionesView({
       setSearchResult(null);
     }
   }, [selectedId, fetchDetail]);
+
+  // Auto-close the drawer on URL change. Stops a stale form from appearing
+  // on a different subscription when the user clicks another item in the
+  // sidebar. (Spec: "drawer auto-closes on URL change".)
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [selectedId]);
 
   async function handleDeleteSub(id: string) {
     if (!window.confirm("¿Eliminar este registro del historial? (borrado lógico, los datos se conservan)")) return;
@@ -891,7 +1022,10 @@ function SuscripcionesView({
         payload.tokenization = tokenSource;
       }
       if (subBackUrl) payload.backUrl = subBackUrl;
-      if (subReason) payload.reason = subReason;
+      // T6 — visual pre-fill: if the user hasn't touched the field, send
+      // empty so the API fills in the real seq. If they have, send their
+      // value verbatim (including empty if they cleared it).
+      payload.reason = isSubReasonPristine ? "" : subReason;
       // Build auto_recurring override — only include fields the user filled; omit empties.
       // Only applies on the API path; redirect path does not send autoRecurring.
       if (subscribePath === "api") {
@@ -919,9 +1053,16 @@ function SuscripcionesView({
       }
       const res = await subscribeToPlan(payload);
       setSubResult(res);
+      // Reset token state explicitly so a re-opened drawer starts fresh.
       setCardTokenId(null);
       setTokenSource(null);
       onSubscriptionsRefresh();
+      // Close the drawer, then auto-navigate to the newly created
+      // subscription. The drawer must close BEFORE navigate so the URL
+      // change triggers the auto-close effect's no-op (drawer is already
+      // closed). Matches A.1 PR1 / A.2 PR2a / B PR2b / A.3 PlanesView
+      // PR3a close-first pattern.
+      setDrawerOpen(false);
       navigate(`/a3/subs/${encodeURIComponent(res.id)}`);
     } catch (err) {
       setSubError(err instanceof Error ? err : new Error("Request failed"));
@@ -962,10 +1103,21 @@ function SuscripcionesView({
 
   async function handleCancel() {
     if (!selectedId) return;
-    const confirmed = window.confirm(
-      "¿Cancelar esta suscripción en MercadoPago? Es IRREVERSIBLE y deja de cobrar.",
-    );
-    if (!confirmed) return;
+    // Open the typed-confirm dialog. The actual cancel request is fired
+    // from the dialog's Confirm button (see handleTypedConfirmCancel) only
+    // after the user types `CANCELAR` exactly. This replaces the old
+    // `window.confirm` flow per the spec's "typed confirmation" decision.
+    setTypedConfirmValue("");
+    setTypedConfirmOpen(true);
+  }
+
+  async function handleTypedConfirmCancel() {
+    // Strict equality, case-sensitive. Any deviation (empty, lowercase,
+    // extra whitespace) blocks the request.
+    if (typedConfirmValue !== "CANCELAR") return;
+    if (!selectedId) return;
+    setTypedConfirmOpen(false);
+    setTypedConfirmValue("");
     setCancelling(true);
     try {
       await cancelSubscription(selectedId);
@@ -981,7 +1133,8 @@ function SuscripcionesView({
   const selectedSub = subscriptions.find((s) => s.id === selectedId);
 
   return (
-    <ThreeColumnLayout
+    <>
+    <MasterDetail
       sidebar={
         <HistorySidebar
           title="Suscripciones"
@@ -1002,7 +1155,9 @@ function SuscripcionesView({
           }
           renderItem={(sub) => (
             <>
-              <div className="font-mono text-gray-700 truncate">{sub.id.slice(0, 16)}…</div>
+              <div className="font-mono text-gray-700 truncate">
+                {sub.reason ?? `${sub.id.slice(0, 16)}…`}
+              </div>
               <div className="flex items-center gap-2 mt-1">
                 <StatusBadge status={sub.status} />
                 <span className="text-gray-400">
@@ -1013,395 +1168,7 @@ function SuscripcionesView({
           )}
         />
       }
-      form={
-        <div className="space-y-4 min-w-0">
-          {/* Subscribe card — tokenization, plan picker and form all live in the form slot, grouped. */}
-          <Card title="Suscribir pagador">
-            {/* Tokenization — rendered OUTSIDE the subscribe form to avoid nested <form> elements */}
-            {subscribePath === "api" && (
-              <div className="mb-4">
-                <p className="text-sm font-medium text-gray-700 mb-2">Tokenization method</p>
-                <div className="flex gap-2 mb-4">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTokenizationMode("mercadopagojs");
-                      setCardTokenId(null);
-                      setTokenSource(null);
-                    }}
-                    className={[
-                      "px-4 py-2 rounded text-sm font-medium border transition-colors",
-                      tokenizationMode === "mercadopagojs"
-                        ? "bg-blue-600 text-white border-blue-600"
-                        : "bg-white text-gray-700 border-gray-300 hover:border-gray-400",
-                    ].join(" ")}
-                  >
-                    MP.js v2 (custom form)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTokenizationMode("brick");
-                      setCardTokenId(null);
-                      setTokenSource(null);
-                    }}
-                    className={[
-                      "px-4 py-2 rounded text-sm font-medium border transition-colors",
-                      tokenizationMode === "brick"
-                        ? "bg-blue-600 text-white border-blue-600"
-                        : "bg-white text-gray-700 border-gray-300 hover:border-gray-400",
-                    ].join(" ")}
-                  >
-                    Card Payment Brick
-                  </button>
-                </div>
-                <div className="border border-gray-200 rounded p-4 bg-gray-50">
-                  {tokenizationMode === "mercadopagojs" ? (
-                    <CardFormMpJs
-                      publicKey={PUBLIC_KEY}
-                      onToken={(id) => {
-                        setCardTokenId(id);
-                        setTokenSource(tokenizationMode);
-                        setSubError(null);
-                      }}
-                    />
-                  ) : (
-                    <CardBrick
-                      key={`brick-${tokenizationMode}`}
-                      publicKey={PUBLIC_KEY}
-                      onToken={(id) => {
-                        setCardTokenId(id);
-                        setTokenSource(tokenizationMode);
-                        setSubError(null);
-                      }}
-                    />
-                  )}
-                </div>
-                {cardTokenId && (
-                  <p className="mt-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
-                    Card token ready (via{" "}
-                    <span className="font-mono">{tokenSource}</span>). Submit to create the
-                    subscription.
-                  </p>
-                )}
-              </div>
-            )}
-
-            <form onSubmit={handleSubscribe} className="space-y-4">
-              <PlanPicker plans={plans} selectedId={selectedPlanMpId} onSelect={setSelectedPlanMpId} />
-
-              {/* Show plan init_point shortcut */}
-              {(() => {
-                const selPlan = plans.find((p) => p.mpPlanId === selectedPlanMpId);
-                return selPlan?.initPoint ? (
-                  <div className="bg-gray-50 border border-gray-200 rounded px-4 py-3 flex items-center justify-between gap-4">
-                    <span className="text-xs text-gray-500 truncate">{selPlan.initPoint}</span>
-                    <a
-                      href={selPlan.initPoint}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="shrink-0 bg-gray-800 text-white text-xs rounded px-3 py-1.5 font-medium hover:bg-gray-900 transition-colors"
-                    >
-                      Abrir checkout del plan
-                    </a>
-                  </div>
-                ) : null;
-              })()}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Payer email</label>
-                <input
-                  type="email"
-                  value={payerEmail}
-                  onChange={(e) => setPayerEmail(e.target.value)}
-                  required
-                  placeholder="payer@example.com"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  External reference{" "}
-                  <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={externalReference}
-                  onChange={(e) => setExternalReference(e.target.value)}
-                  placeholder="order-456"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Subscribe path selector */}
-              <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">Subscribe path</p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSubscribePath("redirect");
-                      setCardTokenId(null);
-                      setTokenSource(null);
-                    }}
-                    className={[
-                      "px-4 py-2 rounded text-sm font-medium border transition-colors",
-                      subscribePath === "redirect"
-                        ? "bg-blue-600 text-white border-blue-600"
-                        : "bg-white text-gray-700 border-gray-300 hover:border-gray-400",
-                    ].join(" ")}
-                  >
-                    Via init_point (redirect)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSubscribePath("api")}
-                    className={[
-                      "px-4 py-2 rounded text-sm font-medium border transition-colors",
-                      subscribePath === "api"
-                        ? "bg-blue-600 text-white border-blue-600"
-                        : "bg-white text-gray-700 border-gray-300 hover:border-gray-400",
-                    ].join(" ")}
-                  >
-                    Via API (card token)
-                  </button>
-                </div>
-              </div>
-
-              {subscribePath === "api" ? (
-                <AdvancedSection>
-                  {/* Top-level fields */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Back URL <span className="text-gray-400 font-normal">(optional)</span>
-                    </label>
-                    <input
-                      type="url"
-                      value={subBackUrl}
-                      onChange={(e) => setSubBackUrl(e.target.value)}
-                      placeholder="https://example.com/return"
-                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Reason <span className="text-gray-400 font-normal">(optional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={subReason}
-                      onChange={(e) => setSubReason(e.target.value)}
-                      placeholder="e.g. monthly plan"
-                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  {/* auto_recurring override probe */}
-                  <fieldset className="border border-amber-200 bg-amber-50 rounded p-4 space-y-3">
-                    <legend className="text-xs font-semibold text-amber-700 px-1">
-                      Override del plan (auto_recurring) — para probar si se superpone al plan
-                    </legend>
-                    <p className="text-xs text-amber-600">
-                      Si lo dejás vacío, se usan los valores del plan.
-                    </p>
-                    <div className="flex gap-3">
-                      <div className="flex-1">
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Amount
-                        </label>
-                        <input
-                          type="number"
-                          value={orAmount}
-                          onChange={(e) => setOrAmount(e.target.value)}
-                          min="0.01"
-                          step="0.01"
-                          placeholder="e.g. 500"
-                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Frequency
-                        </label>
-                        <input
-                          type="number"
-                          value={orFrequency}
-                          onChange={(e) => setOrFrequency(e.target.value)}
-                          min="1"
-                          placeholder="e.g. 1"
-                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Freq. type
-                        </label>
-                        <select
-                          value={orFrequencyType}
-                          onChange={(e) => setOrFrequencyType(e.target.value)}
-                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                        >
-                          <option value="">— (plan default)</option>
-                          <option value="months">months</option>
-                          <option value="days">days</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div className="flex gap-3">
-                      <div className="w-28">
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Currency
-                        </label>
-                        <input
-                          type="text"
-                          value={orCurrency}
-                          onChange={(e) => setOrCurrency(e.target.value)}
-                          maxLength={3}
-                          placeholder="ARS"
-                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Billing day{" "}
-                          <span className="text-gray-400 font-normal">(1–28)</span>
-                        </label>
-                        <input
-                          type="number"
-                          value={orBillingDay}
-                          onChange={(e) => setOrBillingDay(e.target.value)}
-                          min="1"
-                          max="28"
-                          placeholder="e.g. 5"
-                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex gap-3">
-                      <div className="flex-1">
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          Start date
-                        </label>
-                        <input
-                          type="datetime-local"
-                          value={orStartDate}
-                          onChange={(e) => setOrStartDate(e.target.value)}
-                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          End date
-                        </label>
-                        <input
-                          type="datetime-local"
-                          value={orEndDate}
-                          onChange={(e) => setOrEndDate(e.target.value)}
-                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                        />
-                      </div>
-                    </div>
-                    <fieldset className="border border-gray-200 rounded p-3 space-y-2">
-                      <legend className="text-xs font-medium text-gray-600 px-1">
-                        Free trial override{" "}
-                        <span className="text-gray-400 font-normal">
-                          (fill frequency to enable)
-                        </span>
-                      </legend>
-                      <div className="flex gap-3">
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            Frequency
-                          </label>
-                          <input
-                            type="number"
-                            value={orFtFrequency}
-                            onChange={(e) => setOrFtFrequency(e.target.value)}
-                            min="1"
-                            placeholder="e.g. 1"
-                            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                          />
-                        </div>
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            Type
-                          </label>
-                          <select
-                            value={orFtFrequencyType}
-                            onChange={(e) => setOrFtFrequencyType(e.target.value)}
-                            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                          >
-                            <option value="months">months</option>
-                            <option value="days">days</option>
-                          </select>
-                        </div>
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            First invoice offset
-                          </label>
-                          <input
-                            type="number"
-                            value={orFtFirstInvoiceOffset}
-                            onChange={(e) => setOrFtFirstInvoiceOffset(e.target.value)}
-                            min="0"
-                            placeholder="e.g. 0"
-                            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                          />
-                        </div>
-                      </div>
-                    </fieldset>
-                  </fieldset>
-                </AdvancedSection>
-              ) : (
-                <p className="text-xs text-gray-400 italic">
-                  Advanced overrides (backUrl, reason, auto_recurring) only apply to the API subscription path.
-                </p>
-              )}
-              {subError && (
-                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-                  {subError.message}
-                </p>
-              )}
-
-              <button
-                type="submit"
-                disabled={subSubmitting || (subscribePath === "api" && !cardTokenId)}
-                className="w-full bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {subSubmitting
-                  ? "Processing…"
-                  : subscribePath === "redirect"
-                    ? "Subscribe via init_point"
-                    : cardTokenId
-                      ? "Subscribe via API"
-                      : "Tokenize card first"}
-              </button>
-            </form>
-
-            {subResult && (
-              <div className="mt-4 space-y-3">
-                {subResult.path === "redirect" && subResult.initPoint && (
-                  <div className="bg-blue-50 border border-blue-200 rounded px-4 py-3">
-                    <p className="text-xs font-semibold text-blue-700 mb-1 uppercase tracking-wide">
-                      Redirect payer to this link
-                    </p>
-                    <a
-                      href={subResult.initPoint}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-blue-600 underline break-all hover:text-blue-800"
-                    >
-                      {subResult.initPoint}
-                    </a>
-                  </div>
-                )}
-                <ResponsePanel data={subResult} />
-              </div>
-            )}
-          </Card>
-        </div>
-      }
-      data={
+      detail={
         <>
           {/* Search card */}
           <Card title="Buscar por ID (GET subscription)">
@@ -1448,35 +1215,65 @@ function SuscripcionesView({
             </div>
           </Card>
 
-          {/* Timeline card */}
+          {/* Timeline card with `…` overflow menu (Cancel moved off the header
+              and now requires typed confirmation, per the spec). Pattern
+              matches the A.2 PR2a `…` menu and the HistorySidebar's `…` menu. */}
           <Card title="Timeline">
             {selectedSub ? (
               <div>
                 <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100">
                   <span className="text-xs text-gray-500 font-mono">{selectedSub.id}</span>
                   <StatusBadge status={selectedSub.status} />
-                  {selectedSub.status !== "cancelled" && (
-                    <button
-                      type="button"
-                      onClick={() => void handleCancel()}
-                      disabled={cancelling || detailLoading}
-                      className="ml-auto text-xs font-medium text-red-600 border border-red-300 rounded px-2 py-0.5 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      title="Cancelar en MercadoPago (irreversible)"
-                    >
-                      {cancelling ? "Cancelando…" : "Cancelar en MP"}
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={() => {
                       if (selectedId) void fetchDetail(selectedId);
                     }}
                     disabled={detailLoading}
-                    className={`${selectedSub.status !== "cancelled" ? "" : "ml-auto "}text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50`}
+                    className="ml-auto text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
                     title="Refetch timeline"
                   >
                     {detailLoading ? "..." : "↻ Actualizar"}
                   </button>
+                  {/* `…` overflow menu — destructive "Cancelar en MP" lives here,
+                      off the header row. The menu item opens a typed-confirm
+                      dialog (see below) where the user must type `CANCELAR`
+                      exactly before the cancel request fires. */}
+                  {selectedSub.status !== "cancelled" && (
+                    <div className="relative" ref={cancelMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => setCancelMenuOpen((v) => !v)}
+                        aria-haspopup="menu"
+                        aria-expanded={cancelMenuOpen}
+                        aria-label="Más acciones"
+                        title="Más acciones"
+                        className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors rounded text-lg leading-none w-7 h-7 inline-flex items-center justify-center"
+                      >
+                        ⋯
+                      </button>
+                      {cancelMenuOpen && (
+                        <div
+                          role="menu"
+                          className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-20 py-1"
+                        >
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setCancelMenuOpen(false);
+                              void handleCancel();
+                            }}
+                            disabled={cancelling || detailLoading}
+                            className="w-full text-left px-3 py-2 text-xs text-red-600 font-medium hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Cancelar en MercadoPago (irreversible — requiere tipear CANCELAR)"
+                          >
+                            {cancelling ? "Cancelando…" : "Cancelar en MP"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 {selectedSub.status === "pending_redirect" && selectedSub.initPoint && (
                   <div className="mb-4 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
@@ -1503,18 +1300,496 @@ function SuscripcionesView({
           {/* Payments diagnostic card — only shown when a subscription is selected */}
           {selectedId && <PaymentsDiag subscriptionId={selectedId} />}
 
-          {/* Webhooks card */}
-          <Card title="Webhook Events (live feed)">
-            <p className="text-xs text-gray-500 mb-3">
-              {selectedId
-                ? `Live feed for subscription ${selectedId.slice(0, 8)}…`
-                : "Method-level feed including unattributed events."}
-            </p>
-            <WebhookList method="a3_plan" subscriptionId={selectedId ?? undefined} />
-          </Card>
+          {/* Webhook card — hidden when no :subId is selected. The "method-level
+              feed including unattributed events" copy is gone: on A.3 subs
+              webhooks are only meaningful per-subscription. Matches the
+              A.1 PR1 / A.2 PR2a / B PR2b / A.3 PlanesView PR3a pattern. */}
+          {selectedId && (
+            <Card title="Webhook Events (live feed)">
+              <p className="text-xs text-gray-500 mb-3">
+                Live feed for subscription {selectedId.slice(0, 8)}…
+              </p>
+              <WebhookList method="a3_plan" subscriptionId={selectedId} />
+            </Card>
+          )}
         </>
       }
+      fab={
+        <Fab
+          onClick={() => setDrawerOpen(true)}
+          label="Nueva suscripción"
+        />
+      }
     />
+
+    {/* Drawer is always mounted; `open` controls visibility. Children
+        unmount on close (form state is discarded on every open, per the
+        design's contract). `dismissable={!subSubmitting}` locks the
+        drawer only while the subscribe POST is in flight. The X button
+        is always visible (disabled during submit) so the user always
+        sees the escape affordance. The form has tokenization on the
+        API path, so the Brick iframe lifecycle matters: closing the
+        drawer unmounts the CardBrick subtree, and the
+        `key={`brick-${tokenizationMode}`}` forces a clean remount on
+        next open. `width="wide"` (640px) fits the MP Brick iframe and
+        the auto_recurring override fieldset. */}
+    <Drawer
+      open={drawerOpen}
+      onClose={() => setDrawerOpen(false)}
+      title="Suscribir pagador"
+      dismissable={!subSubmitting}
+      width="wide"
+    >
+      {/* Tokenization — rendered OUTSIDE the subscribe form to avoid nested <form> elements */}
+      {subscribePath === "api" && (
+        <div className="mb-4">
+          <p className="text-sm font-medium text-gray-700 mb-2">Tokenization method</p>
+          <div className="flex gap-2 mb-4">
+            <button
+              type="button"
+              onClick={() => {
+                setTokenizationMode("mercadopagojs");
+                setCardTokenId(null);
+                setTokenSource(null);
+              }}
+              className={[
+                "px-4 py-2 rounded text-sm font-medium border transition-colors",
+                tokenizationMode === "mercadopagojs"
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "bg-white text-gray-700 border-gray-300 hover:border-gray-400",
+              ].join(" ")}
+            >
+              MP.js v2 (custom form)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTokenizationMode("brick");
+                setCardTokenId(null);
+                setTokenSource(null);
+              }}
+              className={[
+                "px-4 py-2 rounded text-sm font-medium border transition-colors",
+                tokenizationMode === "brick"
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "bg-white text-gray-700 border-gray-300 hover:border-gray-400",
+              ].join(" ")}
+            >
+              Card Payment Brick
+            </button>
+          </div>
+          <div className="border border-gray-200 rounded p-4 bg-gray-50">
+            {tokenizationMode === "mercadopagojs" ? (
+              <CardFormMpJs
+                publicKey={PUBLIC_KEY}
+                onToken={(id) => {
+                  setCardTokenId(id);
+                  setTokenSource(tokenizationMode);
+                  setSubError(null);
+                }}
+              />
+            ) : (
+              <CardBrick
+                key={`brick-${tokenizationMode}`}
+                publicKey={PUBLIC_KEY}
+                onToken={(id) => {
+                  setCardTokenId(id);
+                  setTokenSource(tokenizationMode);
+                  setSubError(null);
+                }}
+              />
+            )}
+          </div>
+          {cardTokenId && (
+            <p className="mt-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">
+              Card token ready (via{" "}
+              <span className="font-mono">{tokenSource}</span>). Submit to create the
+              subscription.
+            </p>
+          )}
+        </div>
+      )}
+
+      <form onSubmit={handleSubscribe} className="space-y-4">
+        <PlanPicker plans={plans} selectedId={selectedPlanMpId} onSelect={setSelectedPlanMpId} />
+
+        {/* Show plan init_point shortcut */}
+        {(() => {
+          const selPlan = plans.find((p) => p.mpPlanId === selectedPlanMpId);
+          return selPlan?.initPoint ? (
+            <div className="bg-gray-50 border border-gray-200 rounded px-4 py-3 flex items-center justify-between gap-4">
+              <span className="text-xs text-gray-500 truncate">{selPlan.initPoint}</span>
+              <a
+                href={selPlan.initPoint}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="shrink-0 bg-gray-800 text-white text-xs rounded px-3 py-1.5 font-medium hover:bg-gray-900 transition-colors"
+              >
+                Abrir checkout del plan
+              </a>
+            </div>
+          ) : null;
+        })()}
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Payer email</label>
+          <input
+            type="email"
+            value={payerEmail}
+            onChange={(e) => setPayerEmail(e.target.value)}
+            required
+            placeholder="payer@example.com"
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            External reference{" "}
+            <span className="text-gray-400 font-normal">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={externalReference}
+            onChange={(e) => setExternalReference(e.target.value)}
+            placeholder="order-456"
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        {/* Subscribe path selector */}
+        <div>
+          <p className="text-sm font-medium text-gray-700 mb-2">Subscribe path</p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setSubscribePath("redirect");
+                setCardTokenId(null);
+                setTokenSource(null);
+              }}
+              className={[
+                "px-4 py-2 rounded text-sm font-medium border transition-colors",
+                subscribePath === "redirect"
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "bg-white text-gray-700 border-gray-300 hover:border-gray-400",
+              ].join(" ")}
+            >
+              Via init_point (redirect)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSubscribePath("api")}
+              className={[
+                "px-4 py-2 rounded text-sm font-medium border transition-colors",
+                subscribePath === "api"
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "bg-white text-gray-700 border-gray-300 hover:border-gray-400",
+              ].join(" ")}
+            >
+              Via API (card token)
+            </button>
+          </div>
+        </div>
+
+        {subscribePath === "api" ? (
+          <AdvancedSection>
+            {/* Top-level fields */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Back URL <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="url"
+                value={subBackUrl}
+                onChange={(e) => setSubBackUrl(e.target.value)}
+                placeholder="https://example.com/return"
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Reason <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={subReason}
+                onChange={(e) => {
+                  setSubReason(e.target.value);
+                  setIsSubReasonPristine(false);
+                }}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Si no tocás este campo, se envía vacío y la API completa con el número de secuencia real.
+              </p>
+            </div>
+
+            {/* auto_recurring override probe */}
+            <fieldset className="border border-amber-200 bg-amber-50 rounded p-4 space-y-3">
+              <legend className="text-xs font-semibold text-amber-700 px-1">
+                Override del plan (auto_recurring) — para probar si se superpone al plan
+              </legend>
+              <p className="text-xs text-amber-600">
+                Si lo dejás vacío, se usan los valores del plan.
+              </p>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Amount
+                  </label>
+                  <input
+                    type="number"
+                    value={orAmount}
+                    onChange={(e) => setOrAmount(e.target.value)}
+                    min="0.01"
+                    step="0.01"
+                    placeholder="e.g. 500"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Frequency
+                  </label>
+                  <input
+                    type="number"
+                    value={orFrequency}
+                    onChange={(e) => setOrFrequency(e.target.value)}
+                    min="1"
+                    placeholder="e.g. 1"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Freq. type
+                  </label>
+                  <select
+                    value={orFrequencyType}
+                    onChange={(e) => setOrFrequencyType(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  >
+                    <option value="">— (plan default)</option>
+                    <option value="months">months</option>
+                    <option value="days">days</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <div className="w-28">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Currency
+                  </label>
+                  <input
+                    type="text"
+                    value={orCurrency}
+                    onChange={(e) => setOrCurrency(e.target.value)}
+                    maxLength={3}
+                    placeholder="ARS"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Billing day{" "}
+                    <span className="text-gray-400 font-normal">(1–28)</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={orBillingDay}
+                    onChange={(e) => setOrBillingDay(e.target.value)}
+                    min="1"
+                    max="28"
+                    placeholder="e.g. 5"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Start date
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={orStartDate}
+                    onChange={(e) => setOrStartDate(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    End date
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={orEndDate}
+                    onChange={(e) => setOrEndDate(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                </div>
+              </div>
+              <fieldset className="border border-gray-200 rounded p-3 space-y-2">
+                <legend className="text-xs font-medium text-gray-600 px-1">
+                  Free trial override{" "}
+                  <span className="text-gray-400 font-normal">
+                    (fill frequency to enable)
+                  </span>
+                </legend>
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Frequency
+                    </label>
+                    <input
+                      type="number"
+                      value={orFtFrequency}
+                      onChange={(e) => setOrFtFrequency(e.target.value)}
+                      min="1"
+                      placeholder="e.g. 1"
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Type
+                    </label>
+                    <select
+                      value={orFtFrequencyType}
+                      onChange={(e) => setOrFtFrequencyType(e.target.value)}
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    >
+                      <option value="months">months</option>
+                      <option value="days">days</option>
+                    </select>
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      First invoice offset
+                    </label>
+                    <input
+                      type="number"
+                      value={orFtFirstInvoiceOffset}
+                      onChange={(e) => setOrFtFirstInvoiceOffset(e.target.value)}
+                      min="0"
+                      placeholder="e.g. 0"
+                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  </div>
+                </div>
+              </fieldset>
+            </fieldset>
+          </AdvancedSection>
+        ) : (
+          <p className="text-xs text-gray-400 italic">
+            Advanced overrides (backUrl, reason, auto_recurring) only apply to the API subscription path.
+          </p>
+        )}
+        {subError && (
+          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+            {subError.message}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={subSubmitting || (subscribePath === "api" && !cardTokenId)}
+          className="w-full bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {subSubmitting
+            ? "Processing…"
+            : subscribePath === "redirect"
+              ? "Subscribe via init_point"
+              : cardTokenId
+                ? "Subscribe via API"
+                : "Tokenize card first"}
+        </button>
+      </form>
+
+      {subResult && (
+        <div className="mt-4 space-y-3">
+          {subResult.path === "redirect" && subResult.initPoint && (
+            <div className="bg-blue-50 border border-blue-200 rounded px-4 py-3">
+              <p className="text-xs font-semibold text-blue-700 mb-1 uppercase tracking-wide">
+                Redirect payer to this link
+              </p>
+              <a
+                href={subResult.initPoint}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-blue-600 underline break-all hover:text-blue-800"
+              >
+                {subResult.initPoint}
+              </a>
+            </div>
+          )}
+          <ResponsePanel data={subResult} />
+        </div>
+      )}
+    </Drawer>
+
+    {/* Typed-confirm dialog for "Cancelar en MP". Spec: the user must type
+        the literal string `CANCELAR` exactly before the cancel request
+        fires. The Confirm button is disabled until the input matches.
+        We use a small native <dialog> (not window.prompt) so we can
+        disable the confirm button until the typed value is exact — that
+        level of control isn't possible with `window.prompt`. The dialog
+        can be dismissed with Esc or the Cancel button, but neither counts
+        as a confirmation. */}
+    <dialog
+      ref={typedConfirmRef}
+      onClose={() => {
+        setTypedConfirmOpen(false);
+        setTypedConfirmValue("");
+      }}
+      className="bg-transparent p-0 m-0 max-w-none max-h-none w-full h-full backdrop:bg-gray-900/50 open:sm:flex sm:items-center sm:justify-center"
+    >
+      <div className="bg-white rounded-lg shadow-xl w-full sm:max-w-md sm:mx-4 p-5 space-y-3">
+        <h3 className="text-sm font-semibold text-red-700">
+          Cancelar suscripción en MercadoPago
+        </h3>
+        <p className="text-xs text-gray-600">
+          Esta acción es <strong>IRREVERSIBLE</strong> y deja de cobrar al pagador.
+          Para confirmar, escribí <code className="bg-gray-100 px-1 rounded font-mono">CANCELAR</code>{" "}
+          (mayúsculas, sin espacios) en el campo de abajo.
+        </p>
+        <input
+          type="text"
+          autoFocus
+          value={typedConfirmValue}
+          onChange={(e) => setTypedConfirmValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && typedConfirmValue === "CANCELAR") {
+              e.preventDefault();
+              void handleTypedConfirmCancel();
+            }
+          }}
+          placeholder="CANCELAR"
+          className="w-full border border-gray-300 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-red-500"
+        />
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => {
+              setTypedConfirmOpen(false);
+              setTypedConfirmValue("");
+            }}
+            className="px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleTypedConfirmCancel()}
+            disabled={typedConfirmValue !== "CANCELAR"}
+            className="px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            Confirmar cancelación
+          </button>
+        </div>
+      </div>
+    </dialog>
+    </>
   );
 }
 

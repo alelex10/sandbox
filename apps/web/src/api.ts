@@ -4,6 +4,7 @@ import type {
   CreateA1Request,
   CreateA2Request,
   CreatePlanRequest,
+  UpdatePlanRequest,
   SubscribeToPlanRequest,
   SubscriptionResponse,
   SubscriptionDetailResponse,
@@ -58,6 +59,19 @@ async function del<T>(path: string): Promise<T> {
 async function patch<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error((err as { error?: string }).error ?? res.statusText);
+  }
+  return res.json() as Promise<T>;
+}
+
+async function put<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API}${path}`, {
+    method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -213,6 +227,10 @@ export function getPlanDetail(id: string): Promise<PlanDetailResponse> {
 
 export function searchPlan(id: string): Promise<unknown> {
   return get<unknown>(`/a3/plans/${encodeURIComponent(id)}/mp`);
+}
+
+export function updatePlan(id: string, body: UpdatePlanRequest): Promise<PlanResponse> {
+  return put<PlanResponse>(`/a3/plans/${encodeURIComponent(id)}`, body);
 }
 
 export function subscribeToPlan(body: SubscribeToPlanRequest): Promise<SubscribeResult> {
@@ -507,4 +525,4 @@ export function refundPayment(paymentId: string): Promise<unknown> {
   );
 }
 
-export { post, get, del, patch };
+export { post, get, del, patch, put };

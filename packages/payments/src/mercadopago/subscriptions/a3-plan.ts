@@ -209,6 +209,91 @@ export async function subscribeToPlan(
   });
 }
 
+/** Return type derived from the public SDK for the plan update operation. */
+type PreApprovalPlanUpdateResult = Awaited<
+  ReturnType<InstanceType<typeof PreApprovalPlan>["update"]>
+>;
+
+export interface UpdatePlanInput {
+  id: string; // MP preapproval_plan id (plan.mpPlanId)
+  reason?: string;
+  backUrl?: string;
+  status?: "active" | "inactive"; // UPDATE-ONLY field per MP API contract
+  autoRecurring?: {
+    frequency?: number;
+    frequencyType?: "months" | "days";
+    amount?: number;
+    currency?: string;
+    billingDay?: number;
+    billingDayProportional?: boolean;
+    repetitions?: number;
+    freeTrial?: {
+      frequency: number;
+      frequencyType: "months" | "days";
+      firstInvoiceOffset?: number;
+    };
+  };
+  paymentMethodsAllowed?: {
+    paymentTypes?: string[];
+    paymentMethods?: string[];
+  };
+}
+
+/**
+ * Update an existing PreApprovalPlan in MercadoPago.
+ * Uses an imperative omit-undefined body builder (matching subscribeToPlan precedent)
+ * because all fields are optional — spread-conditional is unsuitable here.
+ */
+export async function updatePlan(
+  client: MercadoPagoConfig,
+  input: UpdatePlanInput,
+): Promise<PreApprovalPlanUpdateResult> {
+  const plan = new PreApprovalPlan(client);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const body: any = {};
+
+  if (input.reason !== undefined) body.reason = input.reason;
+  if (input.backUrl !== undefined) body.back_url = input.backUrl;
+  if (input.status !== undefined) body.status = input.status;
+
+  if (input.autoRecurring) {
+    const ar = input.autoRecurring;
+    const arBlock: Record<string, unknown> = {};
+    if (ar.frequency !== undefined) arBlock.frequency = ar.frequency;
+    if (ar.frequencyType !== undefined) arBlock.frequency_type = ar.frequencyType;
+    if (ar.amount !== undefined) arBlock.transaction_amount = ar.amount;
+    if (ar.currency !== undefined) arBlock.currency_id = ar.currency;
+    if (ar.billingDay !== undefined) arBlock.billing_day = ar.billingDay;
+    if (ar.billingDayProportional !== undefined) arBlock.billing_day_proportional = ar.billingDayProportional;
+    if (ar.repetitions !== undefined) arBlock.repetitions = ar.repetitions;
+    if (ar.freeTrial !== undefined) {
+      const ft: Record<string, unknown> = {
+        frequency: ar.freeTrial.frequency,
+        frequency_type: ar.freeTrial.frequencyType,
+      };
+      if (ar.freeTrial.firstInvoiceOffset !== undefined) {
+        ft.first_invoice_offset = ar.freeTrial.firstInvoiceOffset;
+      }
+      arBlock.free_trial = ft;
+    }
+    if (Object.keys(arBlock).length > 0) body.auto_recurring = arBlock;
+  }
+
+  if (input.paymentMethodsAllowed) {
+    const pma: Record<string, unknown> = {};
+    if (input.paymentMethodsAllowed.paymentTypes?.length) {
+      pma.payment_types = input.paymentMethodsAllowed.paymentTypes.map((id) => ({ id }));
+    }
+    if (input.paymentMethodsAllowed.paymentMethods?.length) {
+      pma.payment_methods = input.paymentMethodsAllowed.paymentMethods.map((id) => ({ id }));
+    }
+    if (Object.keys(pma).length > 0) body.payment_methods_allowed = pma;
+  }
+
+  // SDK uses { id, updatePreApprovalPlanRequest } — NOT { id, body } like create.
+  return plan.update({ id: input.id, updatePreApprovalPlanRequest: body });
+}
+
 /**
  * Retrieve an A.3 PreApproval subscription by its MP id.
  */

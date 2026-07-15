@@ -50,6 +50,8 @@ export function CardFormMpJs({ publicKey, onToken }: Props) {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastToken, setLastToken] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const mpRef = useRef<MpInstance | null>(null);
 
   function handleChange(
@@ -85,6 +87,8 @@ export function CardFormMpJs({ publicKey, onToken }: Props) {
       }
 
       onToken(tokenResult.id);
+      setLastToken(tokenResult.id);
+      setCopied(false);
 
       // Reset sensitive fields immediately after use
       setForm((prev) => ({
@@ -238,6 +242,44 @@ export function CardFormMpJs({ publicKey, onToken }: Props) {
       >
         {loading ? "Tokenizing…" : "Tokenize card (MP.js v2)"}
       </button>
+
+      {lastToken && (
+        <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-medium text-gray-600">
+              Card token id (para debug / pruebas API)
+            </label>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(lastToken);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                } catch {
+                  // fallback: select the text
+                  const el = document.getElementById("last-token-input");
+                  if (el) (el as HTMLInputElement).select();
+                }
+              }}
+              className="text-xs px-2 py-1 bg-white border border-gray-300 rounded hover:bg-gray-100 transition-colors"
+            >
+              {copied ? "✓ Copied" : "Copy"}
+            </button>
+          </div>
+          <input
+            id="last-token-input"
+            type="text"
+            readOnly
+            value={lastToken}
+            onClick={(e) => (e.target as HTMLInputElement).select()}
+            className="w-full font-mono text-xs bg-white border border-gray-300 rounded px-2 py-1.5 text-gray-800"
+          />
+          <p className="text-[10px] text-gray-500">
+            Expira en 7 días. Usar solo con tu propio access token en pruebas API.
+          </p>
+        </div>
+      )}
     </form>
   );
 }

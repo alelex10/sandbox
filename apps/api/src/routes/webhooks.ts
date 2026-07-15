@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
+import { Prisma } from "@prisma/client";
 import { db } from "../db.js";
 import { mpFetch } from "../mp.js";
 import { classifyWebhook } from "payments";
@@ -131,14 +132,42 @@ webhooksRouter.delete("/", async (_req: Request, res: Response, next: NextFuncti
   }
 });
 
-// GET /webhooks?method=&page=&limit= — list events (paginated).
+// GET /webhooks?method=&subscriptionId=&planId=&page=&limit= — list events.
 // - method: filter by method. Special value "unattributed" returns events
-//   where method IS NULL or "unknown".
+//   where method IS NULL or "unknown" (these can never be linked to a
+//   subscription/plan, so the other filters are ignored in that case).
+// - subscriptionId: only events attributed to this local subscription id.
+// - planId: local Plan.id; only events attributed to any subscription linked
+//   to this plan. Subscriptions link to a plan via Subscription.preapprovalPlanId
+//   (which stores Plan.mpPlanId) — there is no direct FK — so we resolve the
+//   local id to its mpPlanId, then scope through WebhookEvent.subscription.
 // - page/limit: paginated; default limit = 200, cap = 200 (preserves the
 //   pre-pagination hardcoded `take: 200` upper bound).
 webhooksRouter.get("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const method = req.query.method as string | undefined;
+    const subscriptionId = req.query.subscriptionId as string | undefined;
+    const planId = req.query.planId as string | undefined;
+
+    let where: Prisma.WebhookEventWhereInput;
+    if (method === "unattributed") {
+      where = { OR: [{ method: null }, { method: "unknown" }], deletedAt: null };
+    } else {
+      where = { deletedAt: null };
+      if (method) where.method = method;
+      if (subscriptionId) {
+        where.subscriptionId = subscriptionId;
+      } else if (planId) {
+        const plan = await db.plan.findUnique({
+          where: { id: planId },
+          select: { mpPlanId: true },
+        });
+        // No mpPlanId => the plan has no subscriptions => empty feed.
+        where.subscription = {
+          is: { preapprovalPlanId: plan?.mpPlanId ?? "__no_plan__" },
+        };
+      }
+    }
 
     const { page, limit } = parsePagination(req.query, {
       maxLimit: 200,
@@ -147,12 +176,7 @@ webhooksRouter.get("/", async (req: Request, res: Response, next: NextFunction) 
     const envelope = await paginate(
       db.webhookEvent,
       {
-        where:
-          method === "unattributed"
-            ? { OR: [{ method: null }, { method: "unknown" }], deletedAt: null }
-            : method
-              ? { method, deletedAt: null }
-              : { deletedAt: null },
+        where,
         orderBy: { receivedAt: "desc" },
       },
       { page, limit },

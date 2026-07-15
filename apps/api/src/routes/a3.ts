@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from "express";
-import { CreatePlanRequest, SubscribeToPlanRequest } from "shared";
+import { CreatePlanRequest, SubscribeToPlanRequest, UpdatePlanRequest } from "shared";
 import { buildDefaultReason } from "shared";
-import { createPlan, subscribeToPlan, getA3Subscription, getPlan } from "payments";
+import { createPlan, subscribeToPlan, getA3Subscription, getPlan, updatePlan } from "payments";
 import { db } from "../db.js";
 import { mpClient, getMpBackUrl } from "../mp.js";
 import { tryJsonParse } from "../util.js";
@@ -149,6 +149,133 @@ a3Router.get(
   },
 );
 
+// PUT /a3/plans/:id — update a PreApprovalPlan template via MP API
+a3Router.put(
+  "/plans/:id",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // 1. Validate body against UpdatePlanRequest
+      const body = UpdatePlanRequest.parse(req.body);
+
+      // 2. Resolve plan row — 404 if missing or soft-deleted
+      const plan = await db.plan.findUnique({
+        where: { id: req.params.id },
+      });
+
+      if (!plan) {
+        res.status(404).json({ error: "Plan not found" });
+        return;
+      }
+
+      if (plan.deletedAt !== null) {
+        res.status(404).json({ error: "Plan not found" });
+        return;
+      }
+
+      // 3. Guard — cannot call MP update without a real plan id
+      if (!plan.mpPlanId) {
+        res.status(422).json({ error: "Plan has no mpPlanId to update" });
+        return;
+      }
+
+      // 4. Call MP update — same try/catch 502 pattern as GET /plans/:id/mp
+      let result: unknown;
+      try {
+        result = await updatePlan(mpClient(), {
+          id: plan.mpPlanId,
+          ...(body.reason !== undefined ? { reason: body.reason } : {}),
+          ...(body.backUrl !== undefined ? { backUrl: body.backUrl } : {}),
+          ...(body.status !== undefined ? { status: body.status } : {}),
+          ...(body.autoRecurring || body.billingDay !== undefined || body.billingDayProportional !== undefined
+            ? {
+                autoRecurring: {
+                  ...(body.autoRecurring?.frequency !== undefined ? { frequency: body.autoRecurring.frequency } : {}),
+                  ...(body.autoRecurring?.frequencyType !== undefined ? { frequencyType: body.autoRecurring.frequencyType } : {}),
+                  ...(body.autoRecurring?.amount !== undefined ? { amount: body.autoRecurring.amount } : {}),
+                  ...(body.autoRecurring?.currency !== undefined ? { currency: body.autoRecurring.currency } : {}),
+                  ...(body.autoRecurring?.repetitions !== undefined ? { repetitions: body.autoRecurring.repetitions } : {}),
+                  ...(body.autoRecurring?.freeTrial !== undefined ? { freeTrial: body.autoRecurring.freeTrial } : {}),
+                  ...(body.billingDay !== undefined ? { billingDay: body.billingDay } : {}),
+                  ...(body.billingDayProportional !== undefined ? { billingDayProportional: body.billingDayProportional } : {}),
+                },
+              }
+            : {}),
+          ...(body.paymentMethodsAllowed !== undefined ? { paymentMethodsAllowed: body.paymentMethodsAllowed } : {}),
+        });
+      } catch (mpErr) {
+        const detail = mpErr instanceof Error ? mpErr.message : "Unknown MP error";
+        res.status(502).json({ error: "MercadoPago update failed", detail });
+        return;
+      }
+
+      // 5. Sync Plan row from MP truth — fall back to existing row values for any field MP omits
+      const mpResult = result as Record<string, unknown>;
+      const mpAutoRecurring = mpResult.auto_recurring as Record<string, unknown> | undefined;
+      const amount = typeof mpAutoRecurring?.transaction_amount === "number"
+        ? mpAutoRecurring.transaction_amount
+        : plan.amount;
+      const currency = typeof mpAutoRecurring?.currency_id === "string"
+        ? mpAutoRecurring.currency_id
+        : plan.currency;
+      const frequency = typeof mpAutoRecurring?.frequency === "number"
+        ? mpAutoRecurring.frequency
+        : plan.frequency;
+      const frequencyType = typeof mpAutoRecurring?.frequency_type === "string"
+        ? mpAutoRecurring.frequency_type
+        : plan.frequencyType;
+      const reason = typeof mpResult.reason === "string"
+        ? mpResult.reason
+        : plan.reason;
+      const mpStatus = mpResult.status != null ? String(mpResult.status) : null;
+      const rawUpdate = JSON.stringify(result);
+
+      // 6. Atomic: update Plan row + insert PlanSnapshot kind "update"
+      const updatedPlan = await db.$transaction(async (tx) => {
+        const p = await tx.plan.update({
+          where: { id: plan.id },
+          data: {
+            reason,
+            amount,
+            currency,
+            frequency,
+            frequencyType,
+            rawLastSearch: rawUpdate,
+            ...(typeof mpResult.init_point === "string" && mpResult.init_point
+              ? { initPoint: mpResult.init_point }
+              : {}),
+          },
+        });
+        await tx.planSnapshot.create({
+          data: {
+            planId: plan.id,
+            kind: "update",
+            statusAtTime: mpStatus,
+            raw: rawUpdate,
+          },
+        });
+        return p;
+      });
+
+      // 7. Respond 200 with the same PlanResponse shape (matches GET /plans list shape)
+      res.status(200).json({
+        id: updatedPlan.id,
+        mpPlanId: updatedPlan.mpPlanId,
+        reason: updatedPlan.reason,
+        amount: updatedPlan.amount,
+        currency: updatedPlan.currency,
+        frequency: updatedPlan.frequency,
+        frequencyType: updatedPlan.frequencyType,
+        initPoint: updatedPlan.initPoint,
+        rawCreate: tryJsonParse(updatedPlan.rawCreate),
+        rawLastSearch: tryJsonParse(updatedPlan.rawLastSearch),
+        createdAt: updatedPlan.createdAt.toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // GET /a3/plans/:id — plan detail with unified timeline
 a3Router.get(
   "/plans/:id",
@@ -186,8 +313,13 @@ a3Router.get(
       const timeline = [
         ...plan.snapshots.map((s) => ({
           id: s.id,
-          type: s.kind as "create" | "search",
-          label: s.kind === "create" ? "Creación del plan" : "Búsqueda del plan en MP",
+          type: s.kind as "create" | "search" | "update",
+          label:
+            s.kind === "create"
+              ? "Creación del plan"
+              : s.kind === "update"
+                ? "Actualización del plan"
+                : "Búsqueda del plan en MP",
           status: s.statusAtTime,
           at: s.createdAt.toISOString(),
           data: tryJsonParse(s.raw),

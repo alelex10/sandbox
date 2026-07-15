@@ -114,6 +114,20 @@ model Note {
   @@index([method])
 }
 
+model ApiErrorLog {
+  id        String   @id @default(uuid())
+  method    String
+  path      String
+  status    Int
+  message   String
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([status])
+  @@index([path])
+}
+
 model Counter {
   name  String @id
   value Int    @default(0)

@@ -8,18 +8,20 @@ import { StatusBadge } from "../components/StatusBadge.js";
 import { AdvancedSection } from "../components/AdvancedSection.js";
 import { SubViewToggle } from "../components/SubViewToggle.js";
 import { NotesView } from "../components/NotesView.js";
-import { ThreeColumnLayout } from "../components/ThreeColumnLayout.js";
 import { HistorySidebar } from "../components/HistorySidebar.js";
 import { Pagination } from "../components/Pagination.js";
+import { Drawer } from "../components/Drawer.js";
+import { Fab } from "../components/Fab.js";
+import { MasterDetail } from "../components/MasterDetail.js";
 import { createA1, searchA1, listA1, getA1Detail, deleteA1, deleteAllA1, cancelSubscription } from "../api.js";
 import { usePaginatedQuery } from "../hooks/usePaginatedQuery.js";
 import { PaymentsDiag } from "../components/PaymentsDiag.js";
+import { buildDefaultReason } from "shared";
 import type { SubscriptionResponse, SubscriptionDetailResponse } from "shared";
 
 type SubView = "main" | "notas";
 
 interface FormState {
-  reason: string;
   payerEmail: string;
   externalReference: string;
   frequency: string;
@@ -61,9 +63,12 @@ export function A1Pending() {
   const selectedId = params.id ?? null;
 
   const [subView, setSubView] = useState<SubView>("main");
+  // Drawer is a transient UI state. Not in the URL. Closes on URL change
+  // (see the selectedId-effect below) so a stale form never appears on
+  // a different entity.
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const [form, setForm] = useState<FormState>({
-    reason: "",
     payerEmail: "",
     externalReference: "",
     frequency: "1",
@@ -79,6 +84,20 @@ export function A1Pending() {
     freeTrialFirstInvoiceOffset: "",
     repetitions: "",
   });
+
+  // T6 — visual pre-fill: the reason input is pre-filled with the computed
+  // default. `isReasonPristine` tracks whether the user has touched the field;
+  // if they haven't, submit sends an empty reason so the API fills in the
+  // real seq. If they have, submit sends the user's value verbatim.
+  const [reason, setReason] = useState(() =>
+    buildDefaultReason({
+      type: "A.1",
+      channel: "checkout_pro",
+      paymentMethod: "pending",
+      seq: "0001",
+    }),
+  );
+  const [isReasonPristine, setIsReasonPristine] = useState(true);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -135,6 +154,13 @@ export function A1Pending() {
       setSearchResult(null);
     }
   }, [selectedId, fetchDetail]);
+
+  // Auto-close the drawer on URL change. Stops a stale form from appearing
+  // on a different subscription when the user clicks another item in the
+  // sidebar. (Spec: "drawer auto-closes on URL change".)
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [selectedId]);
 
   async function handleDelete(id: string) {
     if (!window.confirm("¿Eliminar este registro del historial? (borrado lógico, los datos se conservan)")) return;
@@ -194,7 +220,7 @@ export function A1Pending() {
           : undefined;
 
       const payload: Parameters<typeof createA1>[0] = {
-        reason: form.reason,
+        reason: isReasonPristine ? "" : reason,
         payerEmail: form.payerEmail,
         autoRecurring: {
           frequency: Number(form.frequency),
@@ -214,7 +240,10 @@ export function A1Pending() {
       const result = await createA1(payload);
       setCreateResult(result);
       setRefetchToken((n) => n + 1);
-      // Auto-select newly created subscription
+      // Close the drawer, then auto-navigate to the new subscription. The
+      // drawer must close BEFORE navigate so the URL change triggers the
+      // auto-close effect's no-op (drawer is already closed).
+      setDrawerOpen(false);
       navigate(`/a1/${encodeURIComponent(result.id)}`);
     } catch (err) {
       setError(err instanceof Error ? err : new Error("Request failed"));
@@ -266,6 +295,10 @@ export function A1Pending() {
     "init_point" in (createResult.rawCreate as object)
       ? ((createResult.rawCreate as Record<string, unknown>).init_point as string)
       : null);
+  // Show the init_point banner in the detail column for the sub the user
+  // just created (drawer closed → URL :id set → this banner appears).
+  const showInitPoint =
+    createResult != null && selectedId === createResult.id && initPoint != null;
 
   return (
     <div>
@@ -298,7 +331,7 @@ export function A1Pending() {
       {subView === "notas" ? (
         <NotesView method="a1_pending" />
       ) : (
-        <ThreeColumnLayout
+        <MasterDetail
           sidebar={
             <HistorySidebar
               title="Suscripciones"
@@ -319,7 +352,9 @@ export function A1Pending() {
               }
               renderItem={(sub) => (
                 <>
-                  <div className="font-mono text-gray-700 truncate">{sub.id.slice(0, 16)}…</div>
+                  <div className="font-mono text-gray-700 truncate">
+                    {sub.reason ?? `${sub.id.slice(0, 16)}…`}
+                  </div>
                   <div className="flex items-center gap-2 mt-1">
                     <StatusBadge status={sub.status} />
                     <span className="text-gray-400">
@@ -330,235 +365,27 @@ export function A1Pending() {
               )}
             />
           }
-          form={
-            <div className="space-y-4 min-w-0">
-              <Card title="Crear suscripción">
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
-                    <input
-                      type="text"
-                      name="reason"
-                      value={form.reason}
-                      onChange={handleChange}
-                      required
-                      placeholder="Monthly plan"
-                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Payer email</label>
-                    <input
-                      type="email"
-                      name="payerEmail"
-                      value={form.payerEmail}
-                      onChange={handleChange}
-                      required
-                      placeholder="payer@example.com"
-                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      External reference{" "}
-                      <span className="text-gray-400 font-normal">(optional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      name="externalReference"
-                      value={form.externalReference}
-                      onChange={handleChange}
-                      placeholder="order-123"
-                      className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <fieldset className="border border-gray-200 rounded p-4 space-y-4">
-                    <legend className="text-sm font-medium text-gray-700 px-1">Auto-recurring billing</legend>
-                    <div className="flex gap-4">
-                      <div className="flex-1">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Frequency</label>
-                        <input
-                          type="number"
-                          name="frequency"
-                          value={form.frequency}
-                          onChange={handleChange}
-                          min="1"
-                          required
-                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                        <select
-                          name="frequencyType"
-                          value={form.frequencyType}
-                          onChange={handleChange}
-                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="months">months</option>
-                          <option value="days">days</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div className="flex gap-4">
-                      <div className="flex-1">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-                        <input
-                          type="number"
-                          name="amount"
-                          value={form.amount}
-                          onChange={handleChange}
-                          min="0.01"
-                          step="0.01"
-                          required
-                          placeholder="1000"
-                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div className="w-28">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
-                        <input
-                          type="text"
-                          name="currency"
-                          value={form.currency}
-                          onChange={handleChange}
-                          maxLength={3}
-                          minLength={3}
-                          pattern="[A-Za-z]{3}"
-                          required
-                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Start date <span className="text-gray-400 font-normal">(defaults to tomorrow)</span>
-                      </label>
-                      <input
-                        type="datetime-local"
-                        name="startDate"
-                        value={form.startDate}
-                        onChange={handleChange}
-                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </fieldset>
-                  <AdvancedSection>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Back URL <span className="text-gray-400 font-normal">(optional)</span>
-                      </label>
-                      <input
-                        type="url"
-                        name="backUrl"
-                        value={form.backUrl}
-                        onChange={handleChange}
-                        placeholder="https://example.com/return"
-                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        End date <span className="text-gray-400 font-normal">(autoRecurring.endDate, optional)</span>
-                      </label>
-                      <input
-                        type="datetime-local"
-                        name="endDate"
-                        value={form.endDate}
-                        onChange={handleChange}
-                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Repetitions <span className="text-gray-400 font-normal">(autoRecurring.repetitions, optional)</span>
-                      </label>
-                      <input
-                        type="number"
-                        name="repetitions"
-                        value={form.repetitions}
-                        onChange={handleChange}
-                        min="1"
-                        placeholder="e.g. 12"
-                        className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <fieldset className="border border-gray-100 rounded p-3 space-y-3">
-                      <legend className="text-xs font-medium text-gray-600 px-1">Free trial (optional — fill frequency to enable)</legend>
-                      <div className="flex gap-3">
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Frequency</label>
-                          <input
-                            type="number"
-                            name="freeTrialFrequency"
-                            value={form.freeTrialFrequency}
-                            onChange={handleChange}
-                            min="1"
-                            placeholder="e.g. 1"
-                            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
-                          <select
-                            name="freeTrialFrequencyType"
-                            value={form.freeTrialFrequencyType}
-                            onChange={handleChange}
-                            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="months">months</option>
-                            <option value="days">days</option>
-                          </select>
-                        </div>
-                        <div className="flex-1">
-                          <label className="block text-xs font-medium text-gray-700 mb-1">First invoice offset</label>
-                          <input
-                            type="number"
-                            name="freeTrialFirstInvoiceOffset"
-                            value={form.freeTrialFirstInvoiceOffset}
-                            onChange={handleChange}
-                            min="0"
-                            placeholder="e.g. 0"
-                            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                      </div>
-                    </fieldset>
-                  </AdvancedSection>
-                  {error && (
-                    <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-                      {error.message}
-                    </p>
-                  )}
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="w-full bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {submitting ? "Creating…" : "Create preapproval"}
-                  </button>
-                </form>
-
-                {initPoint && (
-                  <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded">
-                    <p className="text-sm font-medium text-green-800 mb-1">Checkout ready</p>
-                    <a
-                      href={initPoint}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-green-700 underline break-all hover:text-green-900"
-                    >
-                      Open MP checkout (init_point)
-                    </a>
-                  </div>
-                )}
-
-                {createResult && <ResponsePanel data={createResult} />}
-              </Card>
-            </div>
-          }
-          data={
+          detail={
             <>
+              {/* Checkout ready banner — only for the sub the user just
+                  created in this session. Drawer closes on submit success,
+                  so this is where the init_point link surfaces. */}
+              {showInitPoint && (
+                <Card title="Checkout listo">
+                  <p className="text-xs text-gray-500 mb-2">
+                    El pagador debe abrir el siguiente enlace para autorizar la suscripción.
+                  </p>
+                  <a
+                    href={initPoint ?? "#"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-green-700 underline break-all hover:text-green-900"
+                  >
+                    Open MP checkout (init_point)
+                  </a>
+                </Card>
+              )}
+
               {/* Search card */}
               <Card title="Buscar por ID (GET subscription)">
                 <div className="space-y-3">
@@ -634,19 +461,249 @@ export function A1Pending() {
               {/* Payments diagnostic card — only shown when a subscription is selected */}
               {selectedId && <PaymentsDiag subscriptionId={selectedId} />}
 
-              {/* Webhooks card */}
-              <Card title="Webhook Events (live feed)">
-                <p className="text-xs text-gray-500 mb-3">
-                  {selectedId
-                    ? `Live feed for subscription ${selectedId.slice(0, 8)}…`
-                    : "Method-level feed including unattributed events. Per-subscription webhooks also appear in the Timeline above."}
-                </p>
-                <WebhookList method="a1_pending" subscriptionId={selectedId ?? undefined} />
-              </Card>
+              {/* Webhook card — hidden when no :id is selected. The "method-level
+                  feed including unattributed events" copy is gone: on A.1
+                  webhooks are only meaningful per-subscription. */}
+              {selectedId && (
+                <Card title="Webhook Events (live feed)">
+                  <p className="text-xs text-gray-500 mb-3">
+                    Live feed for subscription {selectedId.slice(0, 8)}…
+                  </p>
+                  <WebhookList method="a1_pending" subscriptionId={selectedId} />
+                </Card>
+              )}
             </>
+          }
+          fab={
+            <Fab
+              onClick={() => setDrawerOpen(true)}
+              label="+ Crear"
+            />
           }
         />
       )}
+
+      {/* Drawer is always mounted; `open` controls visibility. Children
+          unmount on close (form state is discarded on every open, per
+          the design's contract). `dismissable` is false only while a
+          submit request is in flight, so Esc/backdrop can't orphan an
+          active POST. */}
+      <Drawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        title="Crear suscripción"
+        dismissable={!submitting}
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+            <input
+              type="text"
+              name="reason"
+              value={reason}
+              onChange={(e) => {
+                setReason(e.target.value);
+                setIsReasonPristine(false);
+              }}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Si no tocás este campo, se envía vacío y la API completa con el número de secuencia real.
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Payer email</label>
+            <input
+              type="email"
+              name="payerEmail"
+              value={form.payerEmail}
+              onChange={handleChange}
+              required
+              placeholder="payer@example.com"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              External reference{" "}
+              <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              name="externalReference"
+              value={form.externalReference}
+              onChange={handleChange}
+              placeholder="order-123"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <fieldset className="border border-gray-200 rounded p-4 space-y-4">
+            <legend className="text-sm font-medium text-gray-700 px-1">Auto-recurring billing</legend>
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Frequency</label>
+                <input
+                  type="number"
+                  name="frequency"
+                  value={form.frequency}
+                  onChange={handleChange}
+                  min="1"
+                  required
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                <select
+                  name="frequencyType"
+                  value={form.frequencyType}
+                  onChange={handleChange}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="months">months</option>
+                  <option value="days">days</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                <input
+                  type="number"
+                  name="amount"
+                  value={form.amount}
+                  onChange={handleChange}
+                  min="0.01"
+                  step="0.01"
+                  required
+                  placeholder="1000"
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="w-28">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
+                <input
+                  type="text"
+                  name="currency"
+                  value={form.currency}
+                  onChange={handleChange}
+                  maxLength={3}
+                  minLength={3}
+                  pattern="[A-Za-z]{3}"
+                  required
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Start date <span className="text-gray-400 font-normal">(defaults to tomorrow)</span>
+              </label>
+              <input
+                type="datetime-local"
+                name="startDate"
+                value={form.startDate}
+                onChange={handleChange}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </fieldset>
+          <AdvancedSection>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Back URL <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="url"
+                name="backUrl"
+                value={form.backUrl}
+                onChange={handleChange}
+                placeholder="https://example.com/return"
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                End date <span className="text-gray-400 font-normal">(autoRecurring.endDate, optional)</span>
+              </label>
+              <input
+                type="datetime-local"
+                name="endDate"
+                value={form.endDate}
+                onChange={handleChange}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Repetitions <span className="text-gray-400 font-normal">(autoRecurring.repetitions, optional)</span>
+              </label>
+              <input
+                type="number"
+                name="repetitions"
+                value={form.repetitions}
+                onChange={handleChange}
+                min="1"
+                placeholder="e.g. 12"
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <fieldset className="border border-gray-100 rounded p-3 space-y-3">
+              <legend className="text-xs font-medium text-gray-600 px-1">Free trial (optional — fill frequency to enable)</legend>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Frequency</label>
+                  <input
+                    type="number"
+                    name="freeTrialFrequency"
+                    value={form.freeTrialFrequency}
+                    onChange={handleChange}
+                    min="1"
+                    placeholder="e.g. 1"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
+                  <select
+                    name="freeTrialFrequencyType"
+                    value={form.freeTrialFrequencyType}
+                    onChange={handleChange}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="months">months</option>
+                    <option value="days">days</option>
+                  </select>
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">First invoice offset</label>
+                  <input
+                    type="number"
+                    name="freeTrialFirstInvoiceOffset"
+                    value={form.freeTrialFirstInvoiceOffset}
+                    onChange={handleChange}
+                    min="0"
+                    placeholder="e.g. 0"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            </fieldset>
+          </AdvancedSection>
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+              {error.message}
+            </p>
+          )}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {submitting ? "Creating…" : "Create preapproval"}
+          </button>
+        </form>
+      </Drawer>
     </div>
   );
 }

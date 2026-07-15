@@ -179,7 +179,7 @@ export type SubscriptionSnapshotResponse = z.infer<typeof SubscriptionSnapshotRe
 
 export const TimelineEntryResponse = z.object({
   id: z.string(),
-  type: z.enum(["create", "search", "webhook", "charge"]),
+  type: z.enum(["create", "search", "webhook", "charge", "update"]),
   label: z.string(),
   status: z.string().nullable(),
   at: z.string(),
@@ -211,6 +211,40 @@ export const PlanDetailResponse = PlanResponse.extend({
   timeline: z.array(TimelineEntryResponse),
 });
 export type PlanDetailResponse = z.infer<typeof PlanDetailResponse>;
+
+// Hand-written schema — do NOT use CreatePlanRequest.partial() because .partial()
+// is shallow and would leave nested AutoRecurring fields required and currency
+// defaulted to "ARS". All fields here are fully optional including nested ones.
+export const UpdatePlanRequest = z.object({
+  reason: z.string().min(1).optional(),
+  status: z.enum(["active", "inactive"]).optional(),
+  backUrl: z.string().url().optional(),
+  billingDay: z.number().int().min(1).max(28).optional(),
+  billingDayProportional: z.boolean().optional(),
+  autoRecurring: z
+    .object({
+      frequency: z.number().int().positive().optional(),
+      frequencyType: z.enum(["months", "days"]).optional(),
+      amount: z.number().positive().optional(),
+      currency: z.string().length(3).optional(),
+      repetitions: z.number().int().positive().optional(),
+      freeTrial: z
+        .object({
+          frequency: z.number().int().positive(),
+          frequencyType: z.enum(["months", "days"]),
+          firstInvoiceOffset: z.number().int().nonnegative().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  paymentMethodsAllowed: z
+    .object({
+      paymentTypes: z.array(z.string()).optional(),
+      paymentMethods: z.array(z.string()).optional(),
+    })
+    .optional(),
+});
+export type UpdatePlanRequest = z.infer<typeof UpdatePlanRequest>;
 
 export const WebhookEventResponse = z.object({
   id: z.string(),
@@ -315,6 +349,21 @@ export const NoteResponse = z.object({
   deletedAt: z.string().nullable(),
 });
 export type NoteResponse = z.infer<typeof NoteResponse>;
+
+// ---------------------------------------------------------------------------
+// Error Log
+// ---------------------------------------------------------------------------
+
+export const ApiErrorLogResponse = z.object({
+  id: z.string(),
+  method: z.string(),
+  path: z.string(),
+  status: z.number(),
+  message: z.string(),
+  detail: z.unknown().nullable(),
+  createdAt: z.string(),
+});
+export type ApiErrorLogResponse = z.infer<typeof ApiErrorLogResponse>;
 
 // ---------------------------------------------------------------------------
 // Pagination

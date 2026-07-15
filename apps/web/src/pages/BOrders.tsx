@@ -10,9 +10,11 @@ import { CardFormMpJs } from "../components/CardFormMpJs.js";
 import { CardBrick } from "../components/CardBrick.js";
 import { SubViewToggle } from "../components/SubViewToggle.js";
 import { NotesView } from "../components/NotesView.js";
-import { ThreeColumnLayout } from "../components/ThreeColumnLayout.js";
 import { HistorySidebar } from "../components/HistorySidebar.js";
 import { Pagination } from "../components/Pagination.js";
+import { Drawer } from "../components/Drawer.js";
+import { Fab } from "../components/Fab.js";
+import { MasterDetail } from "../components/MasterDetail.js";
 import {
   createProfile,
   chargeNow,
@@ -32,6 +34,8 @@ import type { SubscriptionDetailResponse, Tokenization } from "shared";
 import { MP_PUBLIC_KEY as PUBLIC_KEY } from "../config.js";
 
 type SubView = "main" | "notas";
+
+type DrawerTab = "register" | "charge";
 
 type TokenizationMode = "mercadopagojs" | "brick";
 
@@ -533,6 +537,16 @@ export function BOrders() {
   const selectedId = params.id ?? null;
 
   const [subView, setSubView] = useState<SubView>("main");
+  // Drawer is a transient UI state. Not in the URL. Closes on URL change
+  // (see the selectedId-effect below) so a stale form never appears on
+  // a different entity.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  // Default tab is "register" — users need to register a profile before
+  // they can charge. They can switch to "charge" via the tab buttons.
+  // Page-level state, NOT in the URL; closing/reopening the drawer keeps
+  // the user's last tab (per Drawer contract: only the children unmount,
+  // not the page-level state).
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>("register");
 
   const [refetchToken, setRefetchToken] = useState(0);
   const [detail, setDetail] = useState<SubscriptionDetailResponse | null>(null);
@@ -577,6 +591,13 @@ export function BOrders() {
     }
   }, [selectedId, fetchDetail]);
 
+  // Auto-close the drawer on URL change. Stops a stale form from appearing
+  // on a different subscription when the user clicks another item in the
+  // sidebar. (Spec: "drawer auto-closes on URL change".)
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [selectedId]);
+
   async function handleDelete(id: string) {
     if (!window.confirm("¿Eliminar este registro del historial? (borrado lógico, los datos se conservan)")) return;
     try {
@@ -611,13 +632,21 @@ export function BOrders() {
     navigate(`/b/${encodeURIComponent(id)}`);
   }
 
-  // L2: after profile creation, refresh list and auto-select the new subscription
+  // L2: after profile creation, refresh list and auto-select the new
+  // subscription. We close the drawer BEFORE navigate so the URL change
+  // effect above is a no-op (drawer is already closed) — matches the
+  // PR1 (A.1) and PR2a (A.2) close-first pattern.
   function handleProfileCreated(newId: string) {
+    setDrawerOpen(false);
     setRefetchToken((n) => n + 1);
     navigate(`/b/${encodeURIComponent(newId)}`);
   }
 
+  // After a charge, refresh both the sidebar list and the detail timeline.
+  // We do NOT navigate: the user stays on the current :id and the new
+  // charge appears in the timeline via the detail refetch.
   function handleCharged() {
+    setDrawerOpen(false);
     setRefetchToken((n) => n + 1);
     if (selectedId) void fetchDetail(selectedId);
   }
@@ -655,7 +684,7 @@ export function BOrders() {
       {subView === "notas" ? (
         <NotesView method="b_orders" />
       ) : (
-        <ThreeColumnLayout
+        <MasterDetail
           sidebar={
             <HistorySidebar
               title="Suscripciones"
@@ -685,26 +714,12 @@ export function BOrders() {
               )}
             />
           }
-          form={
-            <div className="space-y-4 min-w-0">
-              {/* Register profile card */}
-              <Card title="Sección 1 — Registrar medio de pago">
-                <RegisterProfileSection onProfileCreated={handleProfileCreated} />
-              </Card>
-
-              {/* Charge card */}
-              <Card title="Sección 2 — Cobrar ahora">
-                <ChargeSection
-                  subscriptions={subscriptions}
-                  selectedId={selectedId}
-                  onCharged={handleCharged}
-                />
-              </Card>
-            </div>
-          }
-          data={
+          detail={
             <>
-              {/* Medios de pago table — global view of all registered profiles */}
+              {/* Medios de pago table — global view of all registered profiles.
+                  Stays in the detail column (was in the data column in the
+                  old 3-column shell, now it gets the full detail width and
+                  more vertical space since the form moved into the Drawer). */}
               {subscriptions.length > 0 && (
                 <Card title="Medios de pago registrados">
                   <div className="overflow-x-auto">
@@ -775,19 +790,22 @@ export function BOrders() {
               {/* Payments diagnostic card — only shown when a subscription is selected */}
               {selectedId && <PaymentsDiag subscriptionId={selectedId} />}
 
-              {/* Webhooks card */}
-              <Card title="Webhook Events (live feed)">
-                <p className="text-xs text-gray-500 mb-3">
-                  {selectedId
-                    ? `Live feed for subscription ${selectedId.slice(0, 8)}…`
-                    : "Method-level feed including unattributed events."}
-                </p>
-                <WebhookList method="b_orders" subscriptionId={selectedId ?? undefined} />
-              </Card>
+              {/* Webhook card — hidden when no :id is selected. On B the webhooks
+                  are only meaningful per-subscription (no "method-level feed"
+                  including unattributed events like the old 3-column version
+                  had). Matches the A.1 (PR1) and A.2 (PR2a) pattern. */}
+              {selectedId && (
+                <Card title="Webhook Events (live feed)">
+                  <p className="text-xs text-gray-500 mb-3">
+                    Live feed for subscription {selectedId.slice(0, 8)}…
+                  </p>
+                  <WebhookList method="b_orders" subscriptionId={selectedId} />
+                </Card>
+              )}
 
-              {/* Visual divider + RecentPaymentsPanel at the bottom of the data column.
-                  The divider separates the per-subscription blocks above from the
-                  global recent-payments view. */}
+              {/* Visual divider + RecentPaymentsPanel at the bottom of the detail
+                  column. The divider separates the per-subscription blocks above
+                  from the global recent-payments view. */}
               <div className="pt-4 border-t border-gray-200">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                   Global
@@ -796,8 +814,82 @@ export function BOrders() {
               </div>
             </>
           }
+          fab={
+            <Fab
+              onClick={() => setDrawerOpen(true)}
+              label="+ Nuevo"
+            />
+          }
         />
       )}
+
+      {/* Drawer is always mounted; `open` controls visibility. Children
+          unmount on close (form state is discarded on every open, per
+          the Drawer contract). B has no page-level `submitting` flag
+          (RegisterProfileSection and ChargeSection each track their
+          own), so the drawer is always dismissable. Per-section close-
+          on-success (handleProfileCreated / handleCharged) closes the
+          drawer after a successful submit; closing mid-submit is
+          acceptable because the underlying request completes server-
+          side and the section's success callback still fires the
+          parent's refetch via the captured closure. `width="wide"`
+          (640px) fits the MP Brick iframe without horizontal clipping
+          and gives the charge form's many fields room. */}
+      <Drawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        title="Nuevo"
+        dismissable={true}
+        width="wide"
+      >
+        {/* Tab strip — switching tabs unmounts the previous section (each
+            section is conditionally rendered) so tab-local state is
+            discarded, matching the spec's "tab switching discards
+            tab-local state" scenario. */}
+        <div className="flex gap-1 border-b border-gray-200 mb-4 -mx-1">
+          <button
+            type="button"
+            onClick={() => setDrawerTab("register")}
+            className={[
+              "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+              drawerTab === "register"
+                ? "border-blue-500 text-blue-700"
+                : "border-transparent text-gray-500 hover:text-gray-700",
+            ].join(" ")}
+          >
+            Sección 1 — Registrar medio de pago
+          </button>
+          <button
+            type="button"
+            onClick={() => setDrawerTab("charge")}
+            className={[
+              "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+              drawerTab === "charge"
+                ? "border-blue-500 text-blue-700"
+                : "border-transparent text-gray-500 hover:text-gray-700",
+            ].join(" ")}
+          >
+            Sección 2 — Cobrar ahora
+          </button>
+        </div>
+
+        {drawerTab === "register" && (
+          <RegisterProfileSection onProfileCreated={handleProfileCreated} />
+        )}
+        {drawerTab === "charge" && (
+          /* If the user opens this tab with no subscriptions registered, the
+             inner section renders its own "No subscriptions with a registered
+             payment profile yet — use the Register section first" message
+             (gated on `chargeableSubs.length === 0`). User can switch to the
+             Register tab to create one. This is the documented behavior —
+             the spec accepts the empty state message. */
+          <ChargeSection
+            subscriptions={subscriptions}
+            selectedId={selectedId}
+            onCharged={handleCharged}
+          />
+        )}
+      </Drawer>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 interface HistorySidebarProps<T> {
   title: string;
@@ -16,10 +16,12 @@ interface HistorySidebarProps<T> {
 }
 
 /**
- * Generic sidebar with: title (including count), optional clear-all button,
- * scrollable list, selected-item highlight, optional per-item delete button,
- * and an optional `footer` slot for content rendered below the list
- * (typically a `<Pagination>` control).
+ * Generic sidebar with: title (including count), `…` overflow menu (for
+ * bulk destructive actions), scrollable list, selected-item highlight,
+ * and an optional per-item delete button.
+ *
+ * The list is fluid-height: it grows with content (no `max-h-96` clamp).
+ * The shell's max height is whatever the grid row gives it.
  *
  * The per-item delete button stops click propagation internally so callers
  * do not need to manage `e.stopPropagation()` themselves.
@@ -36,24 +38,63 @@ export function HistorySidebar<T>({
   emptyMessage = "No items yet.",
   footer,
 }: HistorySidebarProps<T>) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // Close the overflow menu on outside click.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
+
   return (
     <aside className="space-y-2">
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+        <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-gray-900">
             {title} ({items.length})
           </h3>
           {onClearAll != null && items.length > 0 && (
-            <button
-              type="button"
-              onClick={onClearAll}
-              className="text-xs text-red-400 hover:text-red-600 transition-colors"
-            >
-              Eliminar todo
-            </button>
+            <div className="relative" ref={menuRef}>
+              <button
+                type="button"
+                onClick={() => setMenuOpen((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                aria-label="Más acciones"
+                title="Más acciones"
+                className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors rounded text-lg leading-none w-7 h-7 inline-flex items-center justify-center"
+              >
+                ⋯
+              </button>
+              {menuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-md shadow-lg z-20 py-1"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onClearAll();
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-red-600 font-medium hover:bg-red-50 transition-colors"
+                  >
+                    Eliminar todo
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
-        <ul className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+        <ul className="divide-y divide-gray-100">
           {items.length === 0 && (
             <li className="px-4 py-3 text-xs text-gray-400 italic">{emptyMessage}</li>
           )}
