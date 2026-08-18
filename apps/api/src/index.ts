@@ -1,4 +1,4 @@
-// Load .env from the repo root regardless of cwd — must be first
+// Load .env from apps/api regardless of cwd — must be first
 import "./load-env.js";
 
 import express, { NextFunction, Request, Response } from "express";

@@ -12,9 +12,16 @@ const envSchema = z.object({
   // Optional with defaults
   API_PORT: z.string().default("3000").transform(Number),
   
-  // Optional URLs
-  MP_NOTIFICATION_URL: z.string().url().optional(),
-  MP_BACK_URL: z.string().url().optional(),
+  // Optional URLs — treat an empty string as "not set" so a blank
+  // line in .env is valid (optional() alone only accepts undefined).
+  MP_NOTIFICATION_URL: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().url().optional(),
+  ),
+  MP_BACK_URL: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().url().optional(),
+  ),
 });
 
 let _env: z.infer<typeof envSchema> | null = null;
