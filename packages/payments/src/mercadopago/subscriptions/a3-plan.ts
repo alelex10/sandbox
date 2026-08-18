@@ -42,6 +42,7 @@ export interface SubscribeToPlanInput {
   externalReference: string;
   cardTokenId?: string;
   backUrl?: string;
+  notificationUrl?: string;
   reason?: string;
   // Optional full auto_recurring override — empirical probe: does MP honor per-subscription
   // values over the plan's values? All fields are optional; include only what the caller fills.
@@ -171,6 +172,7 @@ export async function subscribeToPlan(
     ...(input.cardTokenId ? { card_token_id: input.cardTokenId } : {}),
     ...(input.cardTokenId ? { status: "authorized" } : {}),
     ...(input.backUrl ? { back_url: input.backUrl } : {}),
+    ...(input.notificationUrl ? { notification_url: input.notificationUrl } : {}),
     ...(input.reason ? { reason: input.reason } : {}),
   };
 

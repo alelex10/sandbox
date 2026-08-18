@@ -3,7 +3,7 @@ import { CreatePlanRequest, SubscribeToPlanRequest, UpdatePlanRequest } from "sh
 import { buildDefaultReason } from "shared";
 import { createPlan, subscribeToPlan, getA3Subscription, getPlan, updatePlan } from "payments";
 import { db } from "../db.js";
-import { mpClient, getMpBackUrl } from "../mp.js";
+import { mpClient, getMpBackUrl, getMpNotificationUrl } from "../mp.js";
 import { tryJsonParse } from "../util.js";
 import { paginate, parsePagination } from "../lib/pagination.js";
 import { getNextSequence } from "../lib/sequence.js";
@@ -506,6 +506,7 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
         externalReference: body.externalReference,
         cardTokenId: body.cardTokenId,
         backUrl: body.backUrl ?? getMpBackUrl(),
+        notificationUrl: getMpNotificationUrl(),
         reason: effectiveReason,
         ...(body.autoRecurring !== undefined ? { autoRecurring: body.autoRecurring } : {}),
       });

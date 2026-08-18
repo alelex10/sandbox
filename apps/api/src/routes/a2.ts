@@ -3,7 +3,7 @@ import { CreateA2Request } from "shared";
 import { buildDefaultReason } from "shared";
 import { createA2, getA2 } from "payments";
 import { db } from "../db.js";
-import { mpClient, getMpBackUrl } from "../mp.js";
+import { mpClient, getMpBackUrl, getMpNotificationUrl } from "../mp.js";
 import { tryJsonParse } from "../util.js";
 import { paginate, parsePagination } from "../lib/pagination.js";
 import { getNextSequence } from "../lib/sequence.js";
@@ -44,6 +44,7 @@ a2Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
       payerEmail: body.payerEmail,
       externalReference,
       backUrl: body.backUrl ?? getMpBackUrl(),
+      notificationUrl: getMpNotificationUrl(),
       cardTokenId: body.cardTokenId,
       autoRecurring: {
         frequency: body.autoRecurring.frequency,

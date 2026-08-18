@@ -9,6 +9,7 @@ export interface CreateA1Input {
   payerEmail: string;
   externalReference: string;
   backUrl?: string;
+  notificationUrl?: string;
   autoRecurring: {
     frequency: number;
     frequencyType: "months" | "days";
@@ -42,6 +43,7 @@ export async function createA1(
       payer_email: input.payerEmail,
       external_reference: input.externalReference,
       ...(input.backUrl ? { back_url: input.backUrl } : {}),
+      ...(input.notificationUrl ? { notification_url: input.notificationUrl } : {}),
       status: "pending",
       auto_recurring: {
         frequency: input.autoRecurring.frequency,
