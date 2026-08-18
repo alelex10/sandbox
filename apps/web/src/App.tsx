@@ -5,6 +5,7 @@ import { A3Plan } from "./pages/A3Plan.js";
 import { BOrders } from "./pages/BOrders.js";
 import { ConfigEnv } from "./pages/ConfigEnv.js";
 import { ErrorsView } from "./pages/ErrorsView.js";
+import { NotificationsInbox } from "./pages/NotificationsInbox.js";
 import { NotesView } from "./components/NotesView.js";
 
 type Tab = {
@@ -22,6 +23,7 @@ const TABS: Tab[] = [
   { label: "B Orders", to: "/b" },
   { label: "📝 Notes", to: "/notes?method=a1_pending" },
   { label: "🐞 Errors", to: "/errors" },
+  { label: "🔔 Notificaciones", to: "/notifications" },
   { label: "⚙︎ Config / Env", to: "/config" },
 ];
 
@@ -71,6 +73,7 @@ export function App() {
           <Route path="/b/:id" element={<BOrders />} />
           <Route path="/notes" element={<NotesView />} />
           <Route path="/errors" element={<ErrorsView />} />
+          <Route path="/notifications" element={<NotificationsInbox />} />
           <Route path="/config" element={<ConfigEnv />} />
           <Route path="*" element={<Navigate to="/a1" replace />} />
         </Routes>
