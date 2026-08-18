@@ -1,5 +1,4 @@
 import { useState, useRef } from "react";
-import { loadMercadoPago } from "@mercadopago/sdk-js";
 
 interface Props {
   publicKey: string;
@@ -14,13 +13,6 @@ declare global {
   interface Window {
     MercadoPago: new (publicKey: string, options?: { locale?: string }) => MpInstance;
   }
-}
-
-let loadPromise: Promise<unknown> | null = null;
-
-function ensureSdkLoaded(): Promise<unknown> {
-  if (!loadPromise) loadPromise = loadMercadoPago();
-  return loadPromise;
 }
 
 interface FormState {
@@ -66,7 +58,11 @@ export function CardFormMpJs({ publicKey, onToken }: Props) {
     setLoading(true);
 
     try {
-      await ensureSdkLoaded();
+      if (typeof window.MercadoPago !== "function") {
+        throw new Error(
+          "MercadoPago SDK v2 is not loaded. Make sure the <script src=\"https://sdk.mercadopago.com/js/v2\"></script> tag is present in index.html.",
+        );
+      }
 
       if (!mpRef.current) {
         mpRef.current = new window.MercadoPago(publicKey, { locale: "es-AR" });
