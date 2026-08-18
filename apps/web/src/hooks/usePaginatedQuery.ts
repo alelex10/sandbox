@@ -20,6 +20,13 @@ interface UsePaginatedQueryOptions<T> {
    * (matches the 200-cap endpoints like webhooks + errors).
    */
   defaultLimit?: number;
+  /**
+   * Prefix for the URL search params this instance owns (`?page` / `?limit`).
+   * Two paginated queries rendered on the same screen MUST use different
+   * prefixes — otherwise they read and write the same params and paginate in
+   * lockstep, so advancing one can empty (and unmount) the other.
+   */
+  paramPrefix?: string;
 }
 
 interface UsePaginatedQueryResult<T> {
@@ -58,6 +65,7 @@ export function usePaginatedQuery<T>({
   fetcher,
   filterDeps,
   defaultLimit,
+  paramPrefix,
 }: UsePaginatedQueryOptions<T>): UsePaginatedQueryResult<T> {
   // Explicit `defaultLimit` prop always wins; otherwise fall back to the user
   // setting, then the in-code default.
@@ -66,8 +74,11 @@ export function usePaginatedQuery<T>({
 
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const page = clampPage(searchParams.get("page"));
-  const limit = clampLimit(searchParams.get("limit"), effectiveDefaultLimit);
+  const pageKey = `${paramPrefix ?? ""}page`;
+  const limitKey = `${paramPrefix ?? ""}limit`;
+
+  const page = clampPage(searchParams.get(pageKey));
+  const limit = clampLimit(searchParams.get(limitKey), effectiveDefaultLimit);
 
   const [data, setData] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
@@ -83,7 +94,7 @@ export function usePaginatedQuery<T>({
     if (filterDepsKey == null) return;
     if (page !== 1) {
       const next = new URLSearchParams(searchParams);
-      next.set("page", "1");
+      next.set(pageKey, "1");
       setSearchParams(next, { replace: true });
     }
     // We intentionally exclude `page` and `searchParams` from deps — we only
@@ -119,7 +130,7 @@ export function usePaginatedQuery<T>({
   const setPage = (next: number) => {
     const clamped = Math.max(1, next);
     const params = new URLSearchParams(searchParams);
-    params.set("page", String(clamped));
+    params.set(pageKey, String(clamped));
     setSearchParams(params);
   };
 

@@ -47,8 +47,13 @@ export function WebhookList({
     [method, subscriptionId, planId, refetchToken],
   );
 
+  // Own URL params (`?wpage` / `?wlimit`). This list renders inside a host page
+  // that paginates its own sidebar with the default `?page`, so without a
+  // prefix both move together: paging the sidebar would empty this list (and
+  // vice versa).
   const scopedQuery = usePaginatedQuery<WebhookEventResponse>({
     fetcher: scopedFetcher,
+    paramPrefix: "w",
   });
 
   // Unattributed fetcher: only when not scoped (per the comment above).
@@ -62,8 +67,12 @@ export function WebhookList({
     [refetchToken],
   );
 
+  // Own URL params (`?upage` / `?ulimit`) so this paginator does not share
+  // `?page` with the scoped query above — otherwise advancing one would move
+  // both, emptying and unmounting the other section along with its paginator.
   const unattributedQuery = usePaginatedQuery<WebhookEventResponse>({
     fetcher: unattributedFetcher,
+    paramPrefix: "u",
   });
 
   const attributed = scopedQuery.data.filter((e) => e.method !== null);
