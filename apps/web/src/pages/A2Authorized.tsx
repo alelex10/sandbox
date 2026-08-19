@@ -8,21 +8,27 @@ import { StatusBadge } from "../components/StatusBadge.js";
 import { AdvancedSection } from "../components/AdvancedSection.js";
 import { CardFormMpJs } from "../components/CardFormMpJs.js";
 import { CardBrick } from "../components/CardBrick.js";
-import { SubViewToggle } from "../components/SubViewToggle.js";
-import { NotesView } from "../components/NotesView.js";
 import { HistorySidebar } from "../components/HistorySidebar.js";
 import { Pagination } from "../components/Pagination.js";
-import { Drawer } from "../components/Drawer.js";
-import { Fab } from "../components/Fab.js";
 import { MasterDetail } from "../components/MasterDetail.js";
-import { createA2, searchA2, listA2, getA2Detail, deleteA2, deleteAllA2, cancelSubscription } from "../api.js";
+import { RequestFieldsView } from "../components/RequestFieldsView.js";
+import { SubViewToggle } from "../components/SubViewToggle.js";
+import {
+  createA2,
+  searchA2,
+  listA2,
+  getA2Detail,
+  deleteA2,
+  deleteAllA2,
+  cancelSubscription,
+  previewA2,
+} from "../api.js";
 import { usePaginatedQuery } from "../hooks/usePaginatedQuery.js";
 import { PaymentsDiag } from "../components/PaymentsDiag.js";
 import { buildDefaultReason } from "shared";
 import type { SubscriptionResponse, SubscriptionDetailResponse, Tokenization } from "shared";
 import { MP_PUBLIC_KEY as PUBLIC_KEY } from "../config.js";
 
-type SubView = "main" | "notas";
 type TokenizationMode = "mercadopagojs" | "brick";
 
 interface FormState {
@@ -41,6 +47,12 @@ interface FormState {
   freeTrialFirstInvoiceOffset: string;
   repetitions: string;
 }
+
+// Secondary sub-nav (local state, not URL-driven): "Lista" shows the
+// existing master-detail history view unchanged; "Crear" shows the
+// full-page two-column create view (form incl. card tokenization + live
+// "Solicitud MP" preview).
+type SubView = "lista" | "crear";
 
 function tomorrow(): string {
   const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -66,11 +78,10 @@ export function A2Authorized() {
   // (i.e., we're on /a2) means nothing is selected.
   const selectedId = params.id ?? null;
 
-  const [subView, setSubView] = useState<SubView>("main");
-  // Drawer is a transient UI state. Not in the URL. Closes on URL change
-  // (see the selectedId-effect below) so a stale form never appears on
-  // a different entity.
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // Sub-view is transient UI state, not in the URL. Switches back to
+  // "lista" on URL change (see the selectedId-effect below) so a stale
+  // create form never appears on top of a different entity's detail.
+  const [subView, setSubView] = useState<SubView>("lista");
 
   // Cancel-menu state (Timeline header `…` overflow). Same outside-click
   // close pattern as HistorySidebar's `…` menu.
@@ -199,11 +210,11 @@ export function A2Authorized() {
     }
   }, [selectedId, fetchDetail]);
 
-  // Auto-close the drawer on URL change. Stops a stale form from appearing
-  // on a different subscription when the user clicks another item in the
-  // sidebar. (Spec: "drawer auto-closes on URL change".)
+  // Auto-switch back to "Lista" on URL change. Stops a stale create form
+  // from appearing on top of a different subscription's detail when the
+  // user clicks another item in the sidebar.
   useEffect(() => {
-    setDrawerOpen(false);
+    setSubView("lista");
   }, [selectedId]);
 
   async function handleDelete(id: string) {
@@ -252,6 +263,44 @@ export function A2Authorized() {
     setError(null);
   }
 
+  // Fields shared between the real submit payload AND the "Solicitud MP"
+  // live preview payload. cardTokenId/tokenization are deliberately NOT
+  // included here — the real submit adds the actually-tokenized value,
+  // while the preview never needs one (the server always renders a fixed
+  // placeholder for card_token_id, per the non-tokenization guarantee).
+  function buildCommonPayload(): Omit<Parameters<typeof createA2>[0], "cardTokenId" | "tokenization"> {
+    const freeTrial =
+      form.freeTrialFrequency
+        ? {
+            frequency: Number(form.freeTrialFrequency),
+            frequencyType: form.freeTrialFrequencyType,
+            ...(form.freeTrialFirstInvoiceOffset
+              ? { firstInvoiceOffset: Number(form.freeTrialFirstInvoiceOffset) }
+              : {}),
+          }
+        : undefined;
+
+    const payload: Omit<Parameters<typeof createA2>[0], "cardTokenId" | "tokenization"> = {
+      reason: isReasonPristine ? "" : reason,
+      payerEmail: form.payerEmail,
+      autoRecurring: {
+        frequency: Number(form.frequency),
+        frequencyType: form.frequencyType,
+        amount: Number(form.amount),
+        currency: form.currency,
+        startDate: form.startDate
+          ? new Date(form.startDate).toISOString()
+          : undefined,
+        ...(form.endDate ? { endDate: new Date(form.endDate).toISOString() } : {}),
+        ...(freeTrial ? { freeTrial } : {}),
+        ...(form.repetitions ? { repetitions: Number(form.repetitions) } : {}),
+      },
+    };
+    if (form.externalReference) payload.externalReference = form.externalReference;
+    if (form.backUrl) payload.backUrl = form.backUrl;
+    return payload;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -261,48 +310,22 @@ export function A2Authorized() {
     }
     setSubmitting(true);
     try {
-      const freeTrial =
-        form.freeTrialFrequency
-          ? {
-              frequency: Number(form.freeTrialFrequency),
-              frequencyType: form.freeTrialFrequencyType,
-              ...(form.freeTrialFirstInvoiceOffset
-                ? { firstInvoiceOffset: Number(form.freeTrialFirstInvoiceOffset) }
-                : {}),
-            }
-          : undefined;
-
       const payload: Parameters<typeof createA2>[0] = {
-        reason: isReasonPristine ? "" : reason,
-        payerEmail: form.payerEmail,
+        ...buildCommonPayload(),
         cardTokenId,
         tokenization: tokenSource,
-        autoRecurring: {
-          frequency: Number(form.frequency),
-          frequencyType: form.frequencyType,
-          amount: Number(form.amount),
-          currency: form.currency,
-          startDate: form.startDate
-            ? new Date(form.startDate).toISOString()
-            : undefined,
-          ...(form.endDate ? { endDate: new Date(form.endDate).toISOString() } : {}),
-          ...(freeTrial ? { freeTrial } : {}),
-          ...(form.repetitions ? { repetitions: Number(form.repetitions) } : {}),
-        },
       };
-      if (form.externalReference) payload.externalReference = form.externalReference;
-      if (form.backUrl) payload.backUrl = form.backUrl;
       const result = await createA2(payload);
       setCreateResult(result);
       setCardTokenId(null);
       setTokenSource(null);
       setRefetchToken((n) => n + 1);
-      // Close the drawer, then auto-navigate to the new subscription. The
-      // drawer must close BEFORE navigate so the URL change triggers the
-      // auto-close effect's no-op (drawer is already closed). The card
-      // token reset (above) is the explicit "fresh form on next open"
-      // contract the spec calls for.
-      setDrawerOpen(false);
+      // Switch back to "Lista", then auto-navigate to the new subscription.
+      // The switch happens BEFORE navigate so the URL change triggers the
+      // auto-switch effect's no-op (already on "lista"). The card token
+      // reset (above) is the explicit "fresh form on next open" contract
+      // the spec calls for.
+      setSubView("lista");
       navigate(`/a2/${encodeURIComponent(result.id)}`);
     } catch (err) {
       setError(err instanceof Error ? err : new Error("Request failed"));
@@ -358,27 +381,22 @@ export function A2Authorized() {
         </p>
       </div>
 
+      {/* Secondary sub-nav — "Lista" is the existing history view, "Crear"
+          is the full-page two-column create view. Replaces the old
+          floating "+ Crear" button + cramped create Drawer. */}
       <div className="mb-6">
         <SubViewToggle
           value={subView}
-          onChange={(v) => {
-            if (v === "notas") {
-              navigate("/notes?method=a2_authorized");
-            } else {
-              setSubView(v);
-            }
-          }}
+          onChange={setSubView}
           opts={[
-            { key: "main", label: "Suscripciones" },
-            { key: "notas", label: "Notas" },
+            { key: "lista", label: "Lista" },
+            { key: "crear", label: "Crear" },
           ]}
         />
       </div>
 
-      {subView === "notas" ? (
-        <NotesView method="a2_authorized" />
-      ) : (
-        <MasterDetail
+      {subView === "lista" && (
+      <MasterDetail
           sidebar={
             <HistorySidebar
               title="Suscripciones"
@@ -531,32 +549,18 @@ export function A2Authorized() {
               )}
             </>
           }
-          fab={
-            <Fab
-              onClick={() => setDrawerOpen(true)}
-              label="+ Crear"
-            />
-          }
+          fab={null}
         />
       )}
 
-      {/* Drawer is always mounted; `open` controls visibility. Children
-          unmount on close (form state is discarded on every open, per
-          the design's contract). `dismissable={!submitting}` locks the
-          drawer only while the actual create-subscription POST is in
-          flight — Esc and backdrop click are blocked, the close button
-          is rendered disabled with a tooltip. The X button stays
-          visible (just disabled) so the user always sees the escape
-          affordance; once the request resolves, the drawer is freely
-          closeable. `width="wide"` (640px) fits the MP Brick iframe
-          without horizontal clipping. */}
-      <Drawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        title="Crear suscripción (authorized)"
-        dismissable={!submitting}
-        width="wide"
-      >
+      {/* "Crear" — full-page two-column create view. Left column is the
+          create form INCLUDING card tokenization (CardFormMpJs/CardBrick —
+          still tokenizes client-side exactly as before); right column is
+          the live "Solicitud MP" request-construction panel, fed by the
+          SAME `buildCommonPayload()`/`watch` wiring the real submit uses.
+          Replaces the old cramped create Drawer. */}
+      {subView === "crear" && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <Card title="Crear suscripción (authorized)">
           {/* Step 1 — Tokenize */}
           <div className="mb-6">
@@ -831,7 +835,32 @@ export function A2Authorized() {
             </button>
           </form>
         </Card>
-      </Drawer>
+
+        <div>
+          <RequestFieldsView
+            title="Solicitud MP"
+            fetchPreview={() => previewA2(buildCommonPayload())}
+            watch={[
+              form.payerEmail,
+              form.externalReference,
+              form.frequency,
+              form.frequencyType,
+              form.amount,
+              form.currency,
+              form.startDate,
+              form.backUrl,
+              form.endDate,
+              form.freeTrialFrequency,
+              form.freeTrialFrequencyType,
+              form.freeTrialFirstInvoiceOffset,
+              form.repetitions,
+              reason,
+              isReasonPristine,
+            ]}
+          />
+        </div>
+        </div>
+      )}
     </div>
   );
 }

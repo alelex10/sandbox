@@ -14,6 +14,16 @@
     "start": "pnpm --parallel --filter \"./apps/*\" start",
     "build:packages": "pnpm --filter shared build && pnpm --filter payments build",
     "db:push": "pnpm --filter api db:push",
-    "db:generate": "pnpm --filter api db:generate"
+    "db:generate": "pnpm --filter api db:generate",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.5",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "jsdom": "^25.0.1",
+    "vitest": "^4.1.11"
   }
 }

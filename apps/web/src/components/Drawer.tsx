@@ -11,6 +11,16 @@ interface DrawerProps {
   dismissable?: boolean;
   /** Visual width preset. Default ≈ 480px on sm+, full-width on mobile. */
   width?: DrawerWidth;
+  /**
+   * When true (default), uses `showModal()`: full-viewport backdrop,
+   * top-layer rendering, focus trap — byte-identical to every existing
+   * call site. When false, uses `show()`: a non-overlay, right-docked
+   * panel that coexists with the rest of the page (e.g. a live preview
+   * pane) instead of covering it. Only opt-in create flows should pass
+   * `modal={false}` — existing callers that don't pass this prop are
+   * completely unaffected.
+   */
+  modal?: boolean;
 }
 
 // Widths follow the design's responsive table. On mobile the drawer is
@@ -45,19 +55,26 @@ export function Drawer({
   children,
   dismissable = true,
   width = "default",
+  modal = true,
 }: DrawerProps) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
 
-  // Sync `open` prop with the native dialog.
+  // Sync `open` prop with the native dialog. `modal=true` (default) keeps
+  // the exact `showModal()`/`close()` pair every existing call site relies
+  // on. `modal=false` uses `show()` instead — no top-layer, no backdrop,
+  // no focus trap — so the panel coexists with the rest of the page.
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
     if (open) {
-      if (!dialog.open) dialog.showModal();
+      if (!dialog.open) {
+        if (modal) dialog.showModal();
+        else dialog.show();
+      }
     } else {
       if (dialog.open) dialog.close();
     }
-  }, [open]);
+  }, [open, modal]);
 
   // Wire native `close` and `cancel` events. `close` always notifies the
   // parent; `cancel` is suppressed when the drawer is not dismissable
@@ -84,25 +101,41 @@ export function Drawer({
       ref={dialogRef}
       onClick={(e) => {
         // Backdrop click: target IS the dialog element, not its children.
-        if (dismissable && e.target === e.currentTarget) {
+        // Only meaningful in modal mode — a non-modal `show()` dialog has
+        // no backdrop, so this never fires for it (the dialog's own box is
+        // the panel, not a full-viewport click-catcher).
+        if (modal && dismissable && e.target === e.currentTarget) {
           dialogRef.current?.close();
         }
       }}
-      // Override the browser's default `<dialog>` styling: `position: fixed;
-      // inset: 0; margin: auto; display: block` centers the dialog in the
-      // viewport. We want it to fill the viewport (so the backdrop covers
-      // the whole screen) and the inner panel to be right-aligned.
-      className="bg-transparent p-0 m-0 max-w-none max-h-none w-full h-full backdrop:bg-gray-900/50"
+      className={
+        modal
+          ? // Override the browser's default `<dialog>` styling: `position:
+            // fixed; inset: 0; margin: auto; display: block` centers the
+            // dialog in the viewport. We want it to fill the viewport (so
+            // the backdrop covers the whole screen) and the inner panel to
+            // be right-aligned.
+            "bg-transparent p-0 m-0 max-w-none max-h-none w-full h-full backdrop:bg-gray-900/50"
+          : // Non-modal: `show()` renders the dialog in normal document flow
+            // (no top-layer, no backdrop), so the dialog itself IS the
+            // right-docked panel — pin it to the viewport edge directly
+            // instead of relying on an inner full-viewport wrapper.
+            "bg-transparent p-0 m-0 max-w-none max-h-none fixed right-0 top-0 h-full z-40"
+      }
     >
       <div
         className={[
           // ml-auto pushes the panel to the right edge of the full-width
           // dialog. h-full on mobile (full-screen sheet); on sm+ we cap at
           // the viewport height so the panel doesn't outgrow the screen.
-          "ml-auto bg-white shadow-xl flex flex-col",
-          "w-full h-full sm:h-screen sm:max-h-screen overflow-y-auto sm:rounded-l-lg",
+          modal ? "ml-auto" : "",
+          "bg-white shadow-xl flex flex-col",
+          "w-full h-full sm:h-screen sm:max-h-screen overflow-y-auto",
+          modal ? "sm:rounded-l-lg" : "border-l border-gray-200",
           WIDTH_CLASS[width],
-        ].join(" ")}
+        ]
+          .filter(Boolean)
+          .join(" ")}
       >
         <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-gray-900 truncate">{title}</h2>

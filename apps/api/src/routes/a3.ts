@@ -1,12 +1,21 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { CreatePlanRequest, SubscribeToPlanRequest, UpdatePlanRequest } from "shared";
-import { buildDefaultReason } from "shared";
-import { createPlan, subscribeToPlan, getA3Subscription, getPlan, updatePlan } from "payments";
+import {
+  createPlan,
+  subscribeToPlan,
+  getA3Subscription,
+  getPlan,
+  updatePlan,
+  buildPlanBody,
+  buildSubscribeBody,
+} from "payments";
 import { db } from "../db.js";
 import { mpClient, getMpBackUrl, getMpNotificationUrl } from "../mp.js";
 import { tryJsonParse } from "../util.js";
 import { paginate, parsePagination } from "../lib/pagination.js";
-import { getNextSequence } from "../lib/sequence.js";
+import { getNextSequence, peekNextSequence } from "../lib/sequence.js";
+import { assembleA3Plan, assembleA3Subscribe } from "../lib/assemble.js";
+import { withA3PlanPreviewDefaults, withA3SubscribePreviewDefaults } from "../lib/previewDefaults.js";
 
 export const a3Router = Router();
 
@@ -362,34 +371,8 @@ a3Router.post("/plans", async (req: Request, res: Response, next: NextFunction) 
   try {
     const body = CreatePlanRequest.parse(req.body);
 
-    const result = await createPlan(mpClient(), {
-      reason: body.reason,
-      backUrl: body.backUrl ?? getMpBackUrl(),
-      autoRecurring: {
-        frequency: body.autoRecurring.frequency,
-        frequencyType: body.autoRecurring.frequencyType,
-        amount: body.autoRecurring.amount,
-        currency: body.autoRecurring.currency,
-        ...(body.billingDay !== undefined
-          ? { billingDay: body.billingDay }
-          : {}),
-        ...(body.billingDayProportional !== undefined
-          ? { billingDayProportional: body.billingDayProportional }
-          : {}),
-        ...(body.autoRecurring.endDate !== undefined
-          ? { endDate: body.autoRecurring.endDate }
-          : {}),
-        ...(body.autoRecurring.freeTrial !== undefined
-          ? { freeTrial: body.autoRecurring.freeTrial }
-          : {}),
-        ...(body.autoRecurring.repetitions !== undefined
-          ? { repetitions: body.autoRecurring.repetitions }
-          : {}),
-      },
-      ...(body.paymentMethodsAllowed !== undefined
-        ? { paymentMethodsAllowed: body.paymentMethodsAllowed }
-        : {}),
-    });
+    const { input } = assembleA3Plan(body, { backUrl: getMpBackUrl() });
+    const result = await createPlan(mpClient(), input);
 
     // Guard against missing mpPlanId — do not persist a null plan id
     const mpPlanId = (result as { id?: string }).id ?? null;
@@ -470,6 +453,29 @@ a3Router.post("/plans", async (req: Request, res: Response, next: NextFunction) 
   }
 });
 
+// POST /a3/plans/preview — non-mutating dry-run of the plan-create body.
+a3Router.post("/plans/preview", (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = CreatePlanRequest.parse(withA3PlanPreviewDefaults(req.body));
+
+    const { input, provenance } = assembleA3Plan(body, { backUrl: getMpBackUrl() });
+
+    res.status(200).json({
+      body: buildPlanBody(input),
+      provenance,
+      meta: {
+        flow: "a3-plan",
+        dryRun: true,
+        mpCalled: false,
+        dbWritten: false,
+        counterIncremented: false,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Subscription routes (A.3 PreApproval subscriptions linked to a plan)
 // ---------------------------------------------------------------------------
@@ -484,32 +490,20 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
 
     if (body.cardTokenId) {
       // API path — create a linked PreApproval directly via MP SDK
-      // Compose effective reason: user override wins if non-empty, otherwise
-      // compose a default from the route shape. The counter ALWAYS advances
-      // (per locked decision), even when the user's reason wins.
+      // The counter ALWAYS advances (per locked decision), even when the
+      // user's reason wins — getNextSequence mutates; assembleA3Subscribe
+      // itself never does. assembleA3Subscribe picks the "tokenizacion"
+      // reason channel because body.cardTokenId is present.
       const seq = await getNextSequence("a3_plan");
-      const userReason = body.reason?.trim() ?? "";
-      const effectiveReason =
-        userReason !== ""
-          ? userReason
-          : buildDefaultReason({
-              type: "A.3",
-              channel: "tokenizacion",
-              tokenization: body.tokenization,
-              paymentMethod: "card",
-              seq,
-            });
-
-      const result = await subscribeToPlan(mpClient(), {
-        preapprovalPlanId: body.preapprovalPlanId,
-        payerEmail: body.payerEmail,
-        externalReference: body.externalReference,
-        cardTokenId: body.cardTokenId,
-        backUrl: body.backUrl ?? getMpBackUrl(),
+      const { input } = assembleA3Subscribe(body, {
+        seq,
+        seqVolatile: false,
+        backUrl: getMpBackUrl(),
         notificationUrl: getMpNotificationUrl(),
-        reason: effectiveReason,
-        ...(body.autoRecurring !== undefined ? { autoRecurring: body.autoRecurring } : {}),
+        genExternalRef: () => crypto.randomUUID(),
       });
+
+      const result = await subscribeToPlan(mpClient(), input);
 
       const rawCreate = JSON.stringify(result);
       const resultStatus = (result as { status?: string }).status;
@@ -522,11 +516,11 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
             mpId: (result as { id?: string }).id ?? null,
             // Persist whatever status MP returns — do not assume "authorized"
             status: resultStatus ?? null,
-            externalReference: body.externalReference,
-            payerEmail: body.payerEmail,
-            preapprovalPlanId: body.preapprovalPlanId,
+            externalReference: input.externalReference,
+            payerEmail: input.payerEmail,
+            preapprovalPlanId: input.preapprovalPlanId,
             tokenization: body.tokenization ?? null,
-            reason: effectiveReason,
+            reason: input.reason,
             // A.3 API subscriptions do not carry amount/currency directly — plan holds them
             amount: 0,
             currency: "ARS",
@@ -575,21 +569,17 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
 
       const initPoint = plan.initPoint;
 
-      // Compose effective reason: user override wins if non-empty, otherwise
-      // compose a default for the redirect path (checkout_pro / pending).
-      // The counter ALWAYS advances (per locked decision), even when the
-      // user's reason wins.
+      // Compose the effective reason for the redirect path (checkout_pro /
+      // pending) via the same pure assembler. The counter ALWAYS advances
+      // (per locked decision), even when the user's reason wins.
       const seq = await getNextSequence("a3_plan");
-      const userReason = body.reason?.trim() ?? "";
-      const effectiveReason =
-        userReason !== ""
-          ? userReason
-          : buildDefaultReason({
-              type: "A.3",
-              channel: "checkout_pro",
-              paymentMethod: "pending",
-              seq,
-            });
+      const { input } = assembleA3Subscribe(body, {
+        seq,
+        seqVolatile: false,
+        backUrl: getMpBackUrl(),
+        notificationUrl: getMpNotificationUrl(),
+        genExternalRef: () => crypto.randomUUID(),
+      });
 
       // Persist a Subscription record to track this redirect-based subscription attempt
       // Atomic: subscription row + initial snapshot created together (M1).
@@ -599,10 +589,10 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
             method: "a3_plan",
             mpId: null,
             status: "pending_redirect",
-            externalReference: body.externalReference,
-            payerEmail: body.payerEmail,
-            preapprovalPlanId: body.preapprovalPlanId,
-            reason: effectiveReason,
+            externalReference: input.externalReference,
+            payerEmail: input.payerEmail,
+            preapprovalPlanId: input.preapprovalPlanId,
+            reason: input.reason,
             initPoint,
             amount: 0,
             currency: "ARS",
@@ -635,6 +625,38 @@ a3Router.post("/subscribe", async (req: Request, res: Response, next: NextFuncti
         message: "Redirect the payer to initPoint to complete subscription.",
       });
     }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /a3/subscribe/preview — non-mutating dry-run of the subscribe body.
+// Same channel-selection logic as the real route (tokenizacion vs
+// checkout_pro) lives entirely inside assembleA3Subscribe.
+a3Router.post("/subscribe/preview", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = SubscribeToPlanRequest.parse(withA3SubscribePreviewDefaults(req.body));
+
+    const peeked = await peekNextSequence("a3_plan");
+    const { input, provenance } = assembleA3Subscribe(body, {
+      seq: peeked.next,
+      seqVolatile: peeked.volatile,
+      backUrl: getMpBackUrl(),
+      notificationUrl: getMpNotificationUrl(),
+      genExternalRef: () => crypto.randomUUID(),
+    });
+
+    res.status(200).json({
+      body: buildSubscribeBody(input),
+      provenance,
+      meta: {
+        flow: "a3-subscribe",
+        dryRun: true,
+        mpCalled: false,
+        dbWritten: false,
+        counterIncremented: false,
+      },
+    });
   } catch (err) {
     next(err);
   }

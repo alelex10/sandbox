@@ -366,6 +366,46 @@ export const ApiErrorLogResponse = z.object({
 export type ApiErrorLogResponse = z.infer<typeof ApiErrorLogResponse>;
 
 // ---------------------------------------------------------------------------
+// Request-fields preview (dry-run) — provenance-tagged assembled bodies
+// ---------------------------------------------------------------------------
+//
+// Plain TS types (not zod schemas) — these describe the SHAPE of the
+// `/x/preview` JSON responses for the frontend "Solicitud MP" view. The
+// preview endpoints validate their INPUT with the same request schemas
+// above (CreateA1Request, etc.); these types only describe the OUTPUT.
+
+/** Where a previewed field's value ultimately comes from. */
+export type ProvenanceSource =
+  | "form" // the user typed/selected this value
+  | "derived" // computed from other input at request time (e.g. a generated UUID)
+  | "server-env" // read from a server environment variable
+  | "sequence" // depends on the per-method Counter row
+  | "default" // a hardcoded fallback rule when the form field is empty
+  | "constant"; // a fixed literal the server always sends (e.g. status)
+
+export interface FieldProvenance {
+  /** Field path in the previewed body, e.g. "auto_recurring.start_date". */
+  path: string;
+  source: ProvenanceSource;
+  /** Human-readable exact origin: env var name, default rule, or counter name. */
+  origin: string;
+  /** True when the shown value may differ by the time the user actually submits. */
+  volatile?: boolean;
+}
+
+export interface PreviewResponse {
+  body: unknown;
+  provenance: FieldProvenance[];
+  meta: {
+    flow: string;
+    dryRun: true;
+    mpCalled: false;
+    dbWritten: false;
+    counterIncremented: false;
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Pagination
 // ---------------------------------------------------------------------------
 

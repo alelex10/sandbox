@@ -6,20 +6,25 @@ import { TimelineView } from "../components/TimelineView.js";
 import { Card } from "../components/Card.js";
 import { StatusBadge } from "../components/StatusBadge.js";
 import { AdvancedSection } from "../components/AdvancedSection.js";
-import { SubViewToggle } from "../components/SubViewToggle.js";
-import { NotesView } from "../components/NotesView.js";
 import { HistorySidebar } from "../components/HistorySidebar.js";
 import { Pagination } from "../components/Pagination.js";
-import { Drawer } from "../components/Drawer.js";
-import { Fab } from "../components/Fab.js";
 import { MasterDetail } from "../components/MasterDetail.js";
-import { createA1, searchA1, listA1, getA1Detail, deleteA1, deleteAllA1, cancelSubscription } from "../api.js";
+import { RequestFieldsView } from "../components/RequestFieldsView.js";
+import { SubViewToggle } from "../components/SubViewToggle.js";
+import {
+  createA1,
+  searchA1,
+  listA1,
+  getA1Detail,
+  deleteA1,
+  deleteAllA1,
+  cancelSubscription,
+  previewA1,
+} from "../api.js";
 import { usePaginatedQuery } from "../hooks/usePaginatedQuery.js";
 import { PaymentsDiag } from "../components/PaymentsDiag.js";
 import { buildDefaultReason } from "shared";
 import type { SubscriptionResponse, SubscriptionDetailResponse } from "shared";
-
-type SubView = "main" | "notas";
 
 interface FormState {
   payerEmail: string;
@@ -37,6 +42,11 @@ interface FormState {
   freeTrialFirstInvoiceOffset: string;
   repetitions: string;
 }
+
+// Secondary sub-nav (local state, not URL-driven): "Lista" shows the
+// existing master-detail history view unchanged; "Crear" shows the
+// full-page two-column create view (form + live "Solicitud MP" preview).
+type SubView = "lista" | "crear";
 
 function tomorrow(): string {
   const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -62,11 +72,10 @@ export function A1Pending() {
   // (i.e., we're on /a1) means nothing is selected.
   const selectedId = params.id ?? null;
 
-  const [subView, setSubView] = useState<SubView>("main");
-  // Drawer is a transient UI state. Not in the URL. Closes on URL change
-  // (see the selectedId-effect below) so a stale form never appears on
-  // a different entity.
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // Sub-view is transient UI state, not in the URL. Switches back to
+  // "lista" on URL change (see the selectedId-effect below) so a stale
+  // create form never appears on top of a different entity's detail.
+  const [subView, setSubView] = useState<SubView>("lista");
 
   const [form, setForm] = useState<FormState>({
     payerEmail: "",
@@ -155,11 +164,11 @@ export function A1Pending() {
     }
   }, [selectedId, fetchDetail]);
 
-  // Auto-close the drawer on URL change. Stops a stale form from appearing
-  // on a different subscription when the user clicks another item in the
-  // sidebar. (Spec: "drawer auto-closes on URL change".)
+  // Auto-switch back to "Lista" on URL change. Stops a stale create form
+  // from appearing on top of a different subscription's detail when the
+  // user clicks another item in the sidebar.
   useEffect(() => {
-    setDrawerOpen(false);
+    setSubView("lista");
   }, [selectedId]);
 
   async function handleDelete(id: string) {
@@ -203,47 +212,55 @@ export function A1Pending() {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   }
 
+  // Shared by both the real submit (createA1) AND the "Solicitud MP"
+  // live preview (previewA1) — same field mapping, so the preview always
+  // reflects exactly what a real submit would send.
+  function buildPayload(): Parameters<typeof createA1>[0] {
+    const freeTrial =
+      form.freeTrialFrequency
+        ? {
+            frequency: Number(form.freeTrialFrequency),
+            frequencyType: form.freeTrialFrequencyType,
+            ...(form.freeTrialFirstInvoiceOffset
+              ? { firstInvoiceOffset: Number(form.freeTrialFirstInvoiceOffset) }
+              : {}),
+          }
+        : undefined;
+
+    const payload: Parameters<typeof createA1>[0] = {
+      reason: isReasonPristine ? "" : reason,
+      payerEmail: form.payerEmail,
+      autoRecurring: {
+        frequency: Number(form.frequency),
+        frequencyType: form.frequencyType,
+        amount: Number(form.amount),
+        currency: form.currency,
+        startDate: form.startDate
+          ? new Date(form.startDate).toISOString()
+          : undefined,
+        ...(form.endDate ? { endDate: new Date(form.endDate).toISOString() } : {}),
+        ...(freeTrial ? { freeTrial } : {}),
+        ...(form.repetitions ? { repetitions: Number(form.repetitions) } : {}),
+      },
+    };
+    if (form.externalReference) payload.externalReference = form.externalReference;
+    if (form.backUrl) payload.backUrl = form.backUrl;
+    return payload;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      const freeTrial =
-        form.freeTrialFrequency
-          ? {
-              frequency: Number(form.freeTrialFrequency),
-              frequencyType: form.freeTrialFrequencyType,
-              ...(form.freeTrialFirstInvoiceOffset
-                ? { firstInvoiceOffset: Number(form.freeTrialFirstInvoiceOffset) }
-                : {}),
-            }
-          : undefined;
-
-      const payload: Parameters<typeof createA1>[0] = {
-        reason: isReasonPristine ? "" : reason,
-        payerEmail: form.payerEmail,
-        autoRecurring: {
-          frequency: Number(form.frequency),
-          frequencyType: form.frequencyType,
-          amount: Number(form.amount),
-          currency: form.currency,
-          startDate: form.startDate
-            ? new Date(form.startDate).toISOString()
-            : undefined,
-          ...(form.endDate ? { endDate: new Date(form.endDate).toISOString() } : {}),
-          ...(freeTrial ? { freeTrial } : {}),
-          ...(form.repetitions ? { repetitions: Number(form.repetitions) } : {}),
-        },
-      };
-      if (form.externalReference) payload.externalReference = form.externalReference;
-      if (form.backUrl) payload.backUrl = form.backUrl;
+      const payload = buildPayload();
       const result = await createA1(payload);
       setCreateResult(result);
       setRefetchToken((n) => n + 1);
-      // Close the drawer, then auto-navigate to the new subscription. The
-      // drawer must close BEFORE navigate so the URL change triggers the
-      // auto-close effect's no-op (drawer is already closed).
-      setDrawerOpen(false);
+      // Switch back to "Lista", then auto-navigate to the new subscription.
+      // The switch happens BEFORE navigate so the URL change triggers the
+      // auto-switch effect's no-op (already on "lista").
+      setSubView("lista");
       navigate(`/a1/${encodeURIComponent(result.id)}`);
     } catch (err) {
       setError(err instanceof Error ? err : new Error("Request failed"));
@@ -296,7 +313,7 @@ export function A1Pending() {
       ? ((createResult.rawCreate as Record<string, unknown>).init_point as string)
       : null);
   // Show the init_point banner in the detail column for the sub the user
-  // just created (drawer closed → URL :id set → this banner appears).
+  // just created (switched back to "Lista" → URL :id set → this banner appears).
   const showInitPoint =
     createResult != null && selectedId === createResult.id && initPoint != null;
 
@@ -311,27 +328,22 @@ export function A1Pending() {
         </p>
       </div>
 
+      {/* Secondary sub-nav — "Lista" is the existing history view, "Crear"
+          is the full-page two-column create view. Replaces the old
+          floating "+ Crear" button + cramped create Drawer. */}
       <div className="mb-6">
         <SubViewToggle
           value={subView}
-          onChange={(v) => {
-            if (v === "notas") {
-              navigate("/notes?method=a1_pending");
-            } else {
-              setSubView(v);
-            }
-          }}
+          onChange={setSubView}
           opts={[
-            { key: "main", label: "Suscripciones" },
-            { key: "notas", label: "Notas" },
+            { key: "lista", label: "Lista" },
+            { key: "crear", label: "Crear" },
           ]}
         />
       </div>
 
-      {subView === "notas" ? (
-        <NotesView method="a1_pending" />
-      ) : (
-        <MasterDetail
+      {subView === "lista" && (
+      <MasterDetail
           sidebar={
             <HistorySidebar
               title="Suscripciones"
@@ -368,8 +380,9 @@ export function A1Pending() {
           detail={
             <>
               {/* Checkout ready banner — only for the sub the user just
-                  created in this session. Drawer closes on submit success,
-                  so this is where the init_point link surfaces. */}
+                  created in this session. The view switches back to "Lista"
+                  on submit success, so this is where the init_point link
+                  surfaces. */}
               {showInitPoint && (
                 <Card title="Checkout listo">
                   <p className="text-xs text-gray-500 mb-2">
@@ -474,26 +487,18 @@ export function A1Pending() {
               )}
             </>
           }
-          fab={
-            <Fab
-              onClick={() => setDrawerOpen(true)}
-              label="+ Crear"
-            />
-          }
+          fab={null}
         />
       )}
 
-      {/* Drawer is always mounted; `open` controls visibility. Children
-          unmount on close (form state is discarded on every open, per
-          the design's contract). `dismissable` is false only while a
-          submit request is in flight, so Esc/backdrop can't orphan an
-          active POST. */}
-      <Drawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        title="Crear suscripción"
-        dismissable={!submitting}
-      >
+      {/* "Crear" — full-page two-column create view. Left column is the
+          create form (unchanged fields); right column is the live
+          "Solicitud MP" request-construction panel, fed by the SAME
+          `buildPayload()`/`watch` wiring the real submit uses, so the
+          preview always reflects exactly what a real submit would send.
+          Replaces the old cramped create Drawer. */}
+      {subView === "crear" && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
@@ -703,7 +708,32 @@ export function A1Pending() {
             {submitting ? "Creating…" : "Create preapproval"}
           </button>
         </form>
-      </Drawer>
+
+        <div>
+          <RequestFieldsView
+            title="Solicitud MP"
+            fetchPreview={() => previewA1(buildPayload())}
+            watch={[
+              form.payerEmail,
+              form.externalReference,
+              form.frequency,
+              form.frequencyType,
+              form.amount,
+              form.currency,
+              form.startDate,
+              form.backUrl,
+              form.endDate,
+              form.freeTrialFrequency,
+              form.freeTrialFrequencyType,
+              form.freeTrialFirstInvoiceOffset,
+              form.repetitions,
+              reason,
+              isReasonPristine,
+            ]}
+          />
+        </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -9,13 +9,11 @@ import { AdvancedSection } from "../components/AdvancedSection.js";
 import { CardFormMpJs } from "../components/CardFormMpJs.js";
 import { CardBrick } from "../components/CardBrick.js";
 import { SubViewToggle } from "../components/SubViewToggle.js";
-import { NotesView } from "../components/NotesView.js";
 import { HistorySidebar } from "../components/HistorySidebar.js";
 import { Pagination } from "../components/Pagination.js";
-import { Drawer } from "../components/Drawer.js";
-import { Fab } from "../components/Fab.js";
 import { MasterDetail } from "../components/MasterDetail.js";
 import { EditPlanDrawer } from "../components/EditPlanDrawer.js";
+import { RequestFieldsView } from "../components/RequestFieldsView.js";
 import {
   createPlan,
   listA3Plans,
@@ -30,6 +28,8 @@ import {
   deleteAllPlans,
   deleteAllA3,
   cancelSubscription,
+  previewA3Plan,
+  previewA3Subscribe,
 } from "../api.js";
 import type {
   PlanResponse,
@@ -46,7 +46,7 @@ import { PaymentsDiag } from "../components/PaymentsDiag.js";
 import { buildDefaultReason } from "shared";
 import { usePaginatedQuery } from "../hooks/usePaginatedQuery.js";
 
-type SubViewKey = "planes" | "suscripciones" | "notas";
+type SubViewKey = "planes" | "suscripciones" | "crear-plan" | "suscribir";
 type TokenizationMode = "mercadopagojs" | "brick";
 type SubscribePath = "redirect" | "api";
 
@@ -124,6 +124,11 @@ function PlanPicker({
 // ---------------------------------------------------------------------------
 
 interface PlanesViewProps {
+  /** Which A3Plan-level tab is currently selected. PlanesView stays mounted
+   *  regardless of this value (see A3Plan's render) so its own "Crear plan"
+   *  full-page view (gated on `activeSubView === "crear-plan"`) keeps its
+   *  own local form state even while a sibling tab is active. */
+  activeSubView: SubViewKey;
   plans: PlanResponse[];
   onPlansRefresh: () => void;
   page: number;
@@ -131,9 +136,14 @@ interface PlanesViewProps {
   total: number;
   limit: number;
   onPageChange: (p: number) => void;
+  /** Called right before navigating to the newly-created plan, so the
+   *  outer A3Plan switches its sub-nav back to "Planes" — mirrors
+   *  A1Pending's/A2Authorized's "switch to Lista, then navigate" pattern. */
+  onSwitchToMain: () => void;
 }
 
 function PlanesView({
+  activeSubView,
   plans,
   onPlansRefresh,
   page,
@@ -141,7 +151,13 @@ function PlanesView({
   total,
   limit,
   onPageChange,
+  onSwitchToMain,
 }: PlanesViewProps) {
+  // "planes" -> show the master-detail UI. "crear-plan" -> show the
+  // full-page create view below. Otherwise ("suscripciones"/"suscribir")
+  // -> show nothing here.
+  const showMain = activeSubView === "planes";
+  const showCreate = activeSubView === "crear-plan";
   const params = useParams<{ planId?: string }>();
   const navigate = useNavigate();
   // URL is the source of truth.
@@ -150,10 +166,11 @@ function PlanesView({
   const [planDetail, setPlanDetail] = useState<PlanDetailResponse | null>(null);
   const [planDetailLoading, setPlanDetailLoading] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
-  // Drawers are transient UI state. Not in the URL. Both close on URL change
+  // Edit drawer is transient UI state. Not in the URL. Closes on URL change
   // (see the selectedPlanId-effect below) so a stale form never appears on
   // a different plan when the user clicks another item in the sidebar.
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // (The create-plan flow is a full-page view gated on `activeSubView`, not
+  // a Drawer, so it needs no such local "open" state.)
   const [editDrawerOpen, setEditDrawerOpen] = useState(false);
 
   // Create plan form
@@ -210,11 +227,10 @@ function PlanesView({
     }
   }, [selectedPlanId, fetchPlanDetail]);
 
-  // Auto-close both drawers on URL change. Stops a stale form from appearing
-  // on a different plan when the user clicks another item in the sidebar.
-  // (Spec: "drawer auto-closes on URL change".)
+  // Auto-close the edit drawer on URL change. Stops a stale form from
+  // appearing on a different plan when the user clicks another item in the
+  // sidebar. (Spec: "drawer auto-closes on URL change".)
   useEffect(() => {
-    setDrawerOpen(false);
     setEditDrawerOpen(false);
   }, [selectedPlanId]);
 
@@ -258,54 +274,63 @@ function PlanesView({
     navigate(`/a3/plans/${encodeURIComponent(id)}`);
   }
 
+  // Shared by both the real submit (createPlan) AND the "Solicitud MP" live
+  // preview (previewA3Plan) — same field mapping, so the preview always
+  // reflects exactly what a real submit would send. Mirrors A1Pending's/
+  // A2Authorized's `buildPayload()` pattern.
+  function buildPlanPayload(): Parameters<typeof createPlan>[0] {
+    const freeTrial =
+      planForm.freeTrialFrequency
+        ? {
+            frequency: Number(planForm.freeTrialFrequency),
+            frequencyType: planForm.freeTrialFrequencyType,
+            ...(planForm.freeTrialFirstInvoiceOffset
+              ? { firstInvoiceOffset: Number(planForm.freeTrialFirstInvoiceOffset) }
+              : {}),
+          }
+        : undefined;
+
+    const payload: Parameters<typeof createPlan>[0] = {
+      reason: planForm.reason,
+      autoRecurring: {
+        frequency: Number(planForm.frequency),
+        frequencyType: planForm.frequencyType,
+        amount: Number(planForm.amount),
+        currency: planForm.currency,
+        ...(planForm.endDate ? { endDate: new Date(planForm.endDate).toISOString() } : {}),
+        ...(freeTrial ? { freeTrial } : {}),
+        ...(planForm.repetitions ? { repetitions: Number(planForm.repetitions) } : {}),
+      },
+    };
+    if (planForm.billingDay) {
+      payload.billingDay = Number(planForm.billingDay);
+      payload.billingDayProportional = planForm.billingDayProportional;
+    }
+    if (planForm.backUrl) payload.backUrl = planForm.backUrl;
+    const paymentTypes = planForm.paymentTypesAllowed;
+    const paymentMethods = planForm.paymentMethodsAllowed;
+    if (paymentTypes.length > 0 || paymentMethods.length > 0) {
+      payload.paymentMethodsAllowed = {
+        ...(paymentTypes.length > 0 ? { paymentTypes } : {}),
+        ...(paymentMethods.length > 0 ? { paymentMethods } : {}),
+      };
+    }
+    return payload;
+  }
+
   async function handleCreatePlan(e: React.FormEvent) {
     e.preventDefault();
     setPlanError(null);
     setPlanSubmitting(true);
     try {
-      const freeTrial =
-        planForm.freeTrialFrequency
-          ? {
-              frequency: Number(planForm.freeTrialFrequency),
-              frequencyType: planForm.freeTrialFrequencyType,
-              ...(planForm.freeTrialFirstInvoiceOffset
-                ? { firstInvoiceOffset: Number(planForm.freeTrialFirstInvoiceOffset) }
-                : {}),
-            }
-          : undefined;
-
-      const payload: Parameters<typeof createPlan>[0] = {
-        reason: planForm.reason,
-        autoRecurring: {
-          frequency: Number(planForm.frequency),
-          frequencyType: planForm.frequencyType,
-          amount: Number(planForm.amount),
-          currency: planForm.currency,
-          ...(planForm.endDate ? { endDate: new Date(planForm.endDate).toISOString() } : {}),
-          ...(freeTrial ? { freeTrial } : {}),
-          ...(planForm.repetitions ? { repetitions: Number(planForm.repetitions) } : {}),
-        },
-      };
-      if (planForm.billingDay) {
-        payload.billingDay = Number(planForm.billingDay);
-        payload.billingDayProportional = planForm.billingDayProportional;
-      }
-      if (planForm.backUrl) payload.backUrl = planForm.backUrl;
-      const paymentTypes = planForm.paymentTypesAllowed;
-      const paymentMethods = planForm.paymentMethodsAllowed;
-      if (paymentTypes.length > 0 || paymentMethods.length > 0) {
-        payload.paymentMethodsAllowed = {
-          ...(paymentTypes.length > 0 ? { paymentTypes } : {}),
-          ...(paymentMethods.length > 0 ? { paymentMethods } : {}),
-        };
-      }
+      const payload = buildPlanPayload();
       const created = await createPlan(payload);
       setPlanResult(created);
       onPlansRefresh();
-      // Close the drawer, then auto-navigate to the newly created plan.
-      // The drawer must close BEFORE navigate so the URL change triggers
-      // the auto-close effect's no-op (drawer is already closed).
-      setDrawerOpen(false);
+      // Switch back to "Planes", then auto-navigate to the newly created
+      // plan. The switch happens BEFORE navigate, mirroring A1Pending's/
+      // A2Authorized's "switch to Lista, then navigate" ordering.
+      onSwitchToMain();
       navigate(`/a3/plans/${encodeURIComponent(created.id)}`);
     } catch (err) {
       setPlanError(err instanceof Error ? err : new Error("Request failed"));
@@ -335,6 +360,7 @@ function PlanesView({
 
   return (
     <>
+    {showMain && (
     <MasterDetail
       sidebar={
         <HistorySidebar
@@ -495,21 +521,16 @@ function PlanesView({
           )}
         </>
       }
-      fab={
-        <Fab
-          onClick={() => setDrawerOpen(true)}
-          label="Nuevo plan"
-        />
-      }
+      fab={null}
     />
+    )}
 
-    {/* Drawer is always mounted; `open` controls visibility. Children
-        unmount on close (form state is discarded on every open, per
-        the design's contract). `dismissable={!planSubmitting}` locks
-        the drawer only while the create-plan POST is in flight. The
-        X button is always visible (disabled during submit) so the
-        user always sees the escape affordance. The plan form has no
-        tokenization, so no special Brick lifecycle is needed. */}
+    {/* "Crear plan" — full-page two-column create view (replaces the old
+        cramped create Drawer). Left column is the plan-create form
+        (unchanged fields, no tokenization needed); right column is the
+        live "Solicitud MP — Crear plan" request-construction panel, fed
+        by the SAME `buildPlanPayload()`/`watch` wiring the real submit
+        uses. */}
     {/* Edit plan drawer — only renders when a plan with mpPlanId is selected */}
     {selectedPlan && (
       <EditPlanDrawer
@@ -525,13 +546,8 @@ function PlanesView({
       />
     )}
 
-    <Drawer
-      open={drawerOpen}
-      onClose={() => setDrawerOpen(false)}
-      title="Crear plan (PreApprovalPlan)"
-      dismissable={!planSubmitting}
-      width="default"
-    >
+    {showCreate && (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
       <form onSubmit={handleCreatePlan} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
@@ -789,7 +805,32 @@ function PlanesView({
           {planSubmitting ? "Creating…" : "Create plan"}
         </button>
       </form>
-    </Drawer>
+
+      <div>
+        <RequestFieldsView
+          title="Solicitud MP — Crear plan"
+          fetchPreview={() => previewA3Plan(buildPlanPayload())}
+          watch={[
+            planForm.reason,
+            planForm.frequency,
+            planForm.frequencyType,
+            planForm.amount,
+            planForm.currency,
+            planForm.billingDay,
+            planForm.billingDayProportional,
+            planForm.backUrl,
+            planForm.endDate,
+            planForm.freeTrialFrequency,
+            planForm.freeTrialFrequencyType,
+            planForm.freeTrialFirstInvoiceOffset,
+            planForm.repetitions,
+            planForm.paymentTypesAllowed,
+            planForm.paymentMethodsAllowed,
+          ]}
+        />
+      </div>
+      </div>
+    )}
     </>
   );
 }
@@ -799,6 +840,12 @@ function PlanesView({
 // ---------------------------------------------------------------------------
 
 interface SuscripcionesViewProps {
+  /** Which A3Plan-level tab is currently selected. SuscripcionesView stays
+   *  mounted regardless of this value (see A3Plan's render) so its own
+   *  "Suscribir a plan" full-page view (gated on
+   *  `activeSubView === "suscribir"`) keeps its own local form state even
+   *  while a sibling tab is active. */
+  activeSubView: SubViewKey;
   plans: PlanResponse[];
   subscriptions: SubscriptionResponse[];
   onSubscriptionsRefresh: () => void;
@@ -807,9 +854,15 @@ interface SuscripcionesViewProps {
   total: number;
   limit: number;
   onPageChange: (p: number) => void;
+  /** Called right before navigating to the newly-created subscription, so
+   *  the outer A3Plan switches its sub-nav back to "Suscripciones" —
+   *  mirrors A1Pending's/A2Authorized's "switch to Lista, then navigate"
+   *  pattern. */
+  onSwitchToMain: () => void;
 }
 
 function SuscripcionesView({
+  activeSubView,
   plans,
   subscriptions,
   onSubscriptionsRefresh,
@@ -818,7 +871,13 @@ function SuscripcionesView({
   total,
   limit,
   onPageChange,
+  onSwitchToMain,
 }: SuscripcionesViewProps) {
+  // "suscripciones" -> show the master-detail UI. "suscribir" -> show the
+  // full-page create view below. Otherwise ("planes"/"crear-plan") -> show
+  // nothing here.
+  const showMain = activeSubView === "suscripciones";
+  const showCreate = activeSubView === "suscribir";
   const params = useParams<{ subId?: string }>();
   const navigate = useNavigate();
   const selectedId = params.subId ?? null;
@@ -828,10 +887,8 @@ function SuscripcionesView({
   const [deletingAll, setDeletingAll] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
-  // Drawer is a transient UI state. Not in the URL. Closes on URL change
-  // (see the selectedId-effect below) so a stale form never appears on a
-  // different subscription when the user clicks another item in the sidebar.
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // (The create-subscription flow is a full-page view gated on
+  // `activeSubView`, not a Drawer, so it needs no local "open" state.)
 
   // Cancel-menu state (Timeline header `…` overflow). Same outside-click
   // close pattern as the HistorySidebar's `…` menu and the A.2 PR2a pattern.
@@ -956,13 +1013,6 @@ function SuscripcionesView({
     }
   }, [selectedId, fetchDetail]);
 
-  // Auto-close the drawer on URL change. Stops a stale form from appearing
-  // on a different subscription when the user clicks another item in the
-  // sidebar. (Spec: "drawer auto-closes on URL change".)
-  useEffect(() => {
-    setDrawerOpen(false);
-  }, [selectedId]);
-
   async function handleDeleteSub(id: string) {
     if (!window.confirm("¿Eliminar este registro del historial? (borrado lógico, los datos se conservan)")) return;
     try {
@@ -999,6 +1049,56 @@ function SuscripcionesView({
     navigate(`/a3/subs/${encodeURIComponent(id)}`);
   }
 
+  // Shared by both the real submit (subscribeToPlan) AND the "Solicitud MP"
+  // live preview (previewA3Subscribe) — same field mapping, so the preview
+  // always reflects exactly what a real submit would send. Mirrors
+  // A1Pending's/A2Authorized's `buildPayload()` pattern. Does NOT enforce
+  // the submit-time guards (plan selected / card tokenized) — like A1/A2's
+  // preview, it always builds a best-effort payload and lets the server's
+  // preview-defaults fill in whatever is still missing.
+  function buildSubscribePayload(): Parameters<typeof subscribeToPlan>[0] {
+    const payload: Parameters<typeof subscribeToPlan>[0] = {
+      preapprovalPlanId: selectedPlanMpId,
+      payerEmail,
+      externalReference: externalReference || crypto.randomUUID(),
+    };
+    if (subscribePath === "api" && cardTokenId && tokenSource) {
+      payload.cardTokenId = cardTokenId;
+      payload.tokenization = tokenSource;
+    }
+    if (subBackUrl) payload.backUrl = subBackUrl;
+    // T6 — visual pre-fill: if the user hasn't touched the field, send
+    // empty so the API fills in the real seq. If they have, send their
+    // value verbatim (including empty if they cleared it).
+    payload.reason = isSubReasonPristine ? "" : subReason;
+    // Build auto_recurring override — only include fields the user filled; omit empties.
+    // Only applies on the API path; redirect path does not send autoRecurring.
+    if (subscribePath === "api") {
+      type AROverride = NonNullable<typeof payload.autoRecurring>;
+      const ar: AROverride = {};
+      if (orAmount) ar.amount = Number(orAmount);
+      if (orFrequency) ar.frequency = Number(orFrequency);
+      if (orFrequencyType === "months" || orFrequencyType === "days") {
+        ar.frequencyType = orFrequencyType;
+      }
+      if (orCurrency && orCurrency.length === 3) ar.currency = orCurrency.toUpperCase();
+      if (orStartDate) ar.startDate = new Date(orStartDate).toISOString();
+      if (orEndDate) ar.endDate = new Date(orEndDate).toISOString();
+      if (orBillingDay) ar.billingDay = Number(orBillingDay);
+      if (orFtFrequency) {
+        ar.freeTrial = {
+          frequency: Number(orFtFrequency),
+          frequencyType: orFtFrequencyType === "days" ? "days" : "months",
+          ...(orFtFirstInvoiceOffset !== ""
+            ? { firstInvoiceOffset: Number(orFtFirstInvoiceOffset) }
+            : {}),
+        };
+      }
+      if (Object.keys(ar).length > 0) payload.autoRecurring = ar;
+    }
+    return payload;
+  }
+
   async function handleSubscribe(e: React.FormEvent) {
     e.preventDefault();
     setSubError(null);
@@ -1012,57 +1112,18 @@ function SuscripcionesView({
     }
     setSubSubmitting(true);
     try {
-      const payload: Parameters<typeof subscribeToPlan>[0] = {
-        preapprovalPlanId: selectedPlanMpId,
-        payerEmail,
-        externalReference: externalReference || crypto.randomUUID(),
-      };
-      if (subscribePath === "api" && cardTokenId && tokenSource) {
-        payload.cardTokenId = cardTokenId;
-        payload.tokenization = tokenSource;
-      }
-      if (subBackUrl) payload.backUrl = subBackUrl;
-      // T6 — visual pre-fill: if the user hasn't touched the field, send
-      // empty so the API fills in the real seq. If they have, send their
-      // value verbatim (including empty if they cleared it).
-      payload.reason = isSubReasonPristine ? "" : subReason;
-      // Build auto_recurring override — only include fields the user filled; omit empties.
-      // Only applies on the API path; redirect path does not send autoRecurring.
-      if (subscribePath === "api") {
-        type AROverride = NonNullable<typeof payload.autoRecurring>;
-        const ar: AROverride = {};
-        if (orAmount) ar.amount = Number(orAmount);
-        if (orFrequency) ar.frequency = Number(orFrequency);
-        if (orFrequencyType === "months" || orFrequencyType === "days") {
-          ar.frequencyType = orFrequencyType;
-        }
-        if (orCurrency && orCurrency.length === 3) ar.currency = orCurrency.toUpperCase();
-        if (orStartDate) ar.startDate = new Date(orStartDate).toISOString();
-        if (orEndDate) ar.endDate = new Date(orEndDate).toISOString();
-        if (orBillingDay) ar.billingDay = Number(orBillingDay);
-        if (orFtFrequency) {
-          ar.freeTrial = {
-            frequency: Number(orFtFrequency),
-            frequencyType: orFtFrequencyType === "days" ? "days" : "months",
-            ...(orFtFirstInvoiceOffset !== ""
-              ? { firstInvoiceOffset: Number(orFtFirstInvoiceOffset) }
-              : {}),
-          };
-        }
-        if (Object.keys(ar).length > 0) payload.autoRecurring = ar;
-      }
+      const payload = buildSubscribePayload();
       const res = await subscribeToPlan(payload);
       setSubResult(res);
-      // Reset token state explicitly so a re-opened drawer starts fresh.
+      // Reset token state explicitly so the create view starts fresh
+      // next time.
       setCardTokenId(null);
       setTokenSource(null);
       onSubscriptionsRefresh();
-      // Close the drawer, then auto-navigate to the newly created
-      // subscription. The drawer must close BEFORE navigate so the URL
-      // change triggers the auto-close effect's no-op (drawer is already
-      // closed). Matches A.1 PR1 / A.2 PR2a / B PR2b / A.3 PlanesView
-      // PR3a close-first pattern.
-      setDrawerOpen(false);
+      // Switch back to "Suscripciones", then auto-navigate to the newly
+      // created subscription. The switch happens BEFORE navigate,
+      // mirroring A1Pending's/A2Authorized's/PlanesView's ordering.
+      onSwitchToMain();
       navigate(`/a3/subs/${encodeURIComponent(res.id)}`);
     } catch (err) {
       setSubError(err instanceof Error ? err : new Error("Request failed"));
@@ -1134,6 +1195,7 @@ function SuscripcionesView({
 
   return (
     <>
+    {showMain && (
     <MasterDetail
       sidebar={
         <HistorySidebar
@@ -1314,32 +1376,23 @@ function SuscripcionesView({
           )}
         </>
       }
-      fab={
-        <Fab
-          onClick={() => setDrawerOpen(true)}
-          label="Nueva suscripción"
-        />
-      }
+      fab={null}
     />
+    )}
 
-    {/* Drawer is always mounted; `open` controls visibility. Children
-        unmount on close (form state is discarded on every open, per the
-        design's contract). `dismissable={!subSubmitting}` locks the
-        drawer only while the subscribe POST is in flight. The X button
-        is always visible (disabled during submit) so the user always
-        sees the escape affordance. The form has tokenization on the
-        API path, so the Brick iframe lifecycle matters: closing the
-        drawer unmounts the CardBrick subtree, and the
-        `key={`brick-${tokenizationMode}`}` forces a clean remount on
-        next open. `width="wide"` (640px) fits the MP Brick iframe and
-        the auto_recurring override fieldset. */}
-    <Drawer
-      open={drawerOpen}
-      onClose={() => setDrawerOpen(false)}
-      title="Suscribir pagador"
-      dismissable={!subSubmitting}
-      width="wide"
-    >
+    {/* "Suscribir a plan" — full-page two-column create view (replaces the
+        old cramped subscribe Drawer). Left column has the tokenization
+        step (API path) + the subscribe form; right column is the live
+        "Solicitud MP — Suscribir a plan" request-construction panel, fed
+        by the SAME `buildSubscribePayload()`/`watch` wiring the real
+        submit uses. Unmounting this block when `showCreate` is false
+        (same as the old Drawer's "children only render while open"
+        contract) still unmounts the CardBrick subtree, and the
+        `key={`brick-${tokenizationMode}`}` still forces a clean remount
+        next time the view is shown. */}
+    {showCreate && (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="space-y-4">
       {/* Tokenization — rendered OUTSIDE the subscribe form to avoid nested <form> elements */}
       {subscribePath === "api" && (
         <div className="mb-4">
@@ -1726,7 +1779,37 @@ function SuscripcionesView({
           <ResponsePanel data={subResult} />
         </div>
       )}
-    </Drawer>
+      </div>
+
+      <div>
+        <RequestFieldsView
+          title="Solicitud MP — Suscribir a plan"
+          fetchPreview={() => previewA3Subscribe(buildSubscribePayload())}
+          watch={[
+            selectedPlanMpId,
+            payerEmail,
+            externalReference,
+            subscribePath,
+            cardTokenId,
+            tokenSource,
+            subBackUrl,
+            subReason,
+            isSubReasonPristine,
+            orAmount,
+            orFrequency,
+            orFrequencyType,
+            orCurrency,
+            orStartDate,
+            orEndDate,
+            orBillingDay,
+            orFtFrequency,
+            orFtFrequencyType,
+            orFtFirstInvoiceOffset,
+          ]}
+        />
+      </div>
+      </div>
+    )}
 
     {/* Typed-confirm dialog for "Cancelar en MP". Spec: the user must type
         the literal string `CANCELAR` exactly before the cancel request
@@ -1854,13 +1937,14 @@ export function A3Plan({ section }: { section?: "plans" | "subs" } = {}) {
     setSubscriptions(subsData);
   }, [subsData]);
 
-  // PR4 deviation #3: SubViewToggle is now URL-aware. Clicking a tab
-  // navigates instead of mutating local state.
+  // "planes"/"suscripciones" stay URL-aware (clicking those tabs navigates,
+  // keeping the `section`-prop URL sync intact — byte-identical to before).
+  // "crear-plan"/"suscribir" are NOT route-driven — selecting them only
+  // switches the local tab state, the URL stays put.
   function handleSubViewChange(next: SubViewKey) {
     setSubView(next);
     if (next === "planes") navigate("/a3/plans");
     else if (next === "suscripciones") navigate("/a3/subs");
-    else navigate("/notes?method=a3_plan");
   }
 
   return (
@@ -1873,7 +1957,10 @@ export function A3Plan({ section }: { section?: "plans" | "subs" } = {}) {
         </p>
       </div>
 
-      {/* Sub-view toggle — URL-aware (PR4 deviation #3) */}
+      {/* Secondary sub-nav — "Planes"/"Suscripciones" stay URL-aware and
+          route-driven exactly as before. "Crear plan"/"Suscribir a plan"
+          are new full-page create views (replacing the old create
+          Drawers), NOT route-driven. */}
       <div className="mb-6">
         <SubViewToggle
           value={subView}
@@ -1881,35 +1968,45 @@ export function A3Plan({ section }: { section?: "plans" | "subs" } = {}) {
           opts={[
             { key: "planes", label: "Planes" },
             { key: "suscripciones", label: "Suscripciones" },
-            { key: "notas", label: "Notas" },
+            { key: "crear-plan", label: "Crear plan" },
+            { key: "suscribir", label: "Suscribir a plan" },
           ]}
         />
       </div>
 
-      {subView === "planes" ? (
-        <PlanesView
-          plans={plans}
-          onPlansRefresh={() => setPlansRefetchToken((n) => n + 1)}
-          page={plansPage}
-          totalPages={plansTotalPages}
-          total={plansTotal}
-          limit={plansLimit}
-          onPageChange={setPlansPage}
-        />
-      ) : subView === "suscripciones" ? (
-        <SuscripcionesView
-          plans={plans}
-          subscriptions={subscriptions}
-          onSubscriptionsRefresh={() => setSubsRefetchToken((n) => n + 1)}
-          page={subsPage}
-          totalPages={subsTotalPages}
-          total={subsTotal}
-          limit={subsLimit}
-          onPageChange={setSubsPage}
-        />
-      ) : (
-        <NotesView method="a3_plan" />
-      )}
+      {/* PlanesView and SuscripcionesView stay mounted across EVERY subView
+          switch. Each view decides internally (via `activeSubView`)
+          whether to show its own main master-detail content, its own
+          full-page create view, or nothing. The create views render the
+          live "Solicitud MP" preview panel as a second column, fed by
+          each view's own in-progress form state via
+          `buildPlanPayload`/`buildSubscribePayload` — the SAME builders
+          the real submit uses. This is what lets a user select "Crear
+          plan"/"Suscribir a plan" and watch the matching preview update
+          live, side by side with the form, as they keep typing. */}
+      <PlanesView
+        activeSubView={subView}
+        plans={plans}
+        onPlansRefresh={() => setPlansRefetchToken((n) => n + 1)}
+        page={plansPage}
+        totalPages={plansTotalPages}
+        total={plansTotal}
+        limit={plansLimit}
+        onPageChange={setPlansPage}
+        onSwitchToMain={() => setSubView("planes")}
+      />
+      <SuscripcionesView
+        activeSubView={subView}
+        plans={plans}
+        subscriptions={subscriptions}
+        onSubscriptionsRefresh={() => setSubsRefetchToken((n) => n + 1)}
+        page={subsPage}
+        totalPages={subsTotalPages}
+        total={subsTotal}
+        limit={subsLimit}
+        onPageChange={setSubsPage}
+        onSwitchToMain={() => setSubView("suscripciones")}
+      />
     </div>
   );
 }

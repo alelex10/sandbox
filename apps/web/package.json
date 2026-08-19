@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "start": "vite build && vite preview"
+    "start": "vite build && vite preview",
+    "test": "vitest run --config ../../vitest.config.ts --project web"
   },
   "dependencies": {
     "@uiw/react-json-view": "2.0.0-alpha.43",

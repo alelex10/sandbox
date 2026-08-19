@@ -27,6 +27,47 @@ export interface CreateA1Input {
 }
 
 /**
+ * Pure builder for the exact snake_case MP request body `createA1` sends.
+ * Extracted verbatim from `createA1` so preview endpoints can render the
+ * true MP body without calling MP. No I/O, no randomness — deterministic
+ * from `input` alone.
+ */
+export function buildA1Body(input: CreateA1Input) {
+  return {
+    reason: input.reason,
+    payer_email: input.payerEmail,
+    external_reference: input.externalReference,
+    ...(input.backUrl ? { back_url: input.backUrl } : {}),
+    ...(input.notificationUrl ? { notification_url: input.notificationUrl } : {}),
+    status: "pending",
+    auto_recurring: {
+      frequency: input.autoRecurring.frequency,
+      frequency_type: input.autoRecurring.frequencyType,
+      transaction_amount: input.autoRecurring.amount,
+      currency_id: input.autoRecurring.currency,
+      start_date: input.autoRecurring.startDate,
+      ...(input.autoRecurring.endDate !== undefined
+        ? { end_date: input.autoRecurring.endDate }
+        : {}),
+      ...(input.autoRecurring.freeTrial !== undefined
+        ? {
+            free_trial: {
+              frequency: input.autoRecurring.freeTrial.frequency,
+              frequency_type: input.autoRecurring.freeTrial.frequencyType,
+              ...(input.autoRecurring.freeTrial.firstInvoiceOffset !== undefined
+                ? { first_invoice_offset: input.autoRecurring.freeTrial.firstInvoiceOffset }
+                : {}),
+            },
+          }
+        : {}),
+      ...(input.autoRecurring.repetitions !== undefined
+        ? { repetitions: input.autoRecurring.repetitions }
+        : {}),
+    },
+  };
+}
+
+/**
  * Create a PreApproval subscription with status "pending".
  * The MP response includes id, init_point, and status.
  * The client must be produced by mpClient() — no config is constructed here.
@@ -38,38 +79,7 @@ export async function createA1(
   const preApproval = new PreApproval(client);
 
   return preApproval.create({
-    body: {
-      reason: input.reason,
-      payer_email: input.payerEmail,
-      external_reference: input.externalReference,
-      ...(input.backUrl ? { back_url: input.backUrl } : {}),
-      ...(input.notificationUrl ? { notification_url: input.notificationUrl } : {}),
-      status: "pending",
-      auto_recurring: {
-        frequency: input.autoRecurring.frequency,
-        frequency_type: input.autoRecurring.frequencyType,
-        transaction_amount: input.autoRecurring.amount,
-        currency_id: input.autoRecurring.currency,
-        start_date: input.autoRecurring.startDate,
-        ...(input.autoRecurring.endDate !== undefined
-          ? { end_date: input.autoRecurring.endDate }
-          : {}),
-        ...(input.autoRecurring.freeTrial !== undefined
-          ? {
-              free_trial: {
-                frequency: input.autoRecurring.freeTrial.frequency,
-                frequency_type: input.autoRecurring.freeTrial.frequencyType,
-                ...(input.autoRecurring.freeTrial.firstInvoiceOffset !== undefined
-                  ? { first_invoice_offset: input.autoRecurring.freeTrial.firstInvoiceOffset }
-                  : {}),
-              },
-            }
-          : {}),
-        ...(input.autoRecurring.repetitions !== undefined
-          ? { repetitions: input.autoRecurring.repetitions }
-          : {}),
-      },
-    },
+    body: buildA1Body(input),
     requestOptions: {
       idempotencyKey: crypto.randomUUID(),
     },

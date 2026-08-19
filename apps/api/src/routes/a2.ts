@@ -1,12 +1,13 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { CreateA2Request } from "shared";
-import { buildDefaultReason } from "shared";
-import { createA2, getA2 } from "payments";
+import { createA2, getA2, buildA2Body } from "payments";
 import { db } from "../db.js";
 import { mpClient, getMpBackUrl, getMpNotificationUrl } from "../mp.js";
 import { tryJsonParse } from "../util.js";
 import { paginate, parsePagination } from "../lib/pagination.js";
-import { getNextSequence } from "../lib/sequence.js";
+import { getNextSequence, peekNextSequence } from "../lib/sequence.js";
+import { assembleA2 } from "../lib/assemble.js";
+import { withA2PreviewDefaults } from "../lib/previewDefaults.js";
 
 export const a2Router = Router();
 
@@ -15,54 +16,20 @@ a2Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = CreateA2Request.parse(req.body);
 
-    // externalReference is optional — generate a UUID when omitted
-    const externalReference = body.externalReference ?? crypto.randomUUID();
-
-    // Default start_date to tomorrow if not provided (prevents immediate debt)
-    const startDate =
-      body.autoRecurring.startDate ??
-      new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-    // Compose effective reason: user override wins if non-empty, otherwise
-    // compose a default from the route shape. The counter ALWAYS advances
-    // (per locked decision), even when the user's reason wins.
+    // The counter ALWAYS advances (per locked decision), even when the
+    // user's reason wins — getNextSequence mutates; assembleA2 itself never does.
+    // `cardTokenPlaceholder` is unset here — the real route always has an
+    // already-tokenized cardTokenId from the frontend, forwarded verbatim.
     const seq = await getNextSequence("a2_authorized");
-    const userReason = body.reason?.trim() ?? "";
-    const effectiveReason =
-      userReason !== ""
-        ? userReason
-        : buildDefaultReason({
-            type: "A.2",
-            channel: "tokenizacion",
-            tokenization: body.tokenization,
-            paymentMethod: "card",
-            seq,
-          });
-
-    const result = await createA2(mpClient(), {
-      reason: effectiveReason,
-      payerEmail: body.payerEmail,
-      externalReference,
-      backUrl: body.backUrl ?? getMpBackUrl(),
+    const { input } = assembleA2(body, {
+      seq,
+      seqVolatile: false,
+      backUrl: getMpBackUrl(),
       notificationUrl: getMpNotificationUrl(),
-      cardTokenId: body.cardTokenId,
-      autoRecurring: {
-        frequency: body.autoRecurring.frequency,
-        frequencyType: body.autoRecurring.frequencyType,
-        amount: body.autoRecurring.amount,
-        currency: body.autoRecurring.currency,
-        startDate,
-        ...(body.autoRecurring.endDate !== undefined
-          ? { endDate: body.autoRecurring.endDate }
-          : {}),
-        ...(body.autoRecurring.freeTrial !== undefined
-          ? { freeTrial: body.autoRecurring.freeTrial }
-          : {}),
-        ...(body.autoRecurring.repetitions !== undefined
-          ? { repetitions: body.autoRecurring.repetitions }
-          : {}),
-      },
+      genExternalRef: () => crypto.randomUUID(),
     });
+
+    const result = await createA2(mpClient(), input);
 
     const rawCreate = JSON.stringify(result);
 
@@ -73,12 +40,12 @@ a2Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
           method: "a2_authorized",
           mpId: result.id ?? null,
           status: result.status ?? null,
-          externalReference,
-          payerEmail: body.payerEmail,
-          reason: effectiveReason,
-          amount: body.autoRecurring.amount,
-          currency: body.autoRecurring.currency,
-          startDate,
+          externalReference: input.externalReference,
+          payerEmail: input.payerEmail,
+          reason: input.reason,
+          amount: input.autoRecurring.amount,
+          currency: input.autoRecurring.currency,
+          startDate: input.autoRecurring.startDate,
           tokenization: body.tokenization,
           rawCreate,
         },
@@ -104,6 +71,39 @@ a2Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
       rawCreate: result,
       rawLastSearch: null,
       createdAt: subscription.createdAt.toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /a2/preview — non-mutating dry-run. `card_token_id` is ALWAYS the
+// fixed placeholder (`cardTokenPlaceholder: true`) — preview NEVER implies
+// a real tokenization call, regardless of what the caller sends.
+a2Router.post("/preview", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = CreateA2Request.parse(withA2PreviewDefaults(req.body));
+
+    const peeked = await peekNextSequence("a2_authorized");
+    const { input, provenance } = assembleA2(body, {
+      seq: peeked.next,
+      seqVolatile: peeked.volatile,
+      backUrl: getMpBackUrl(),
+      notificationUrl: getMpNotificationUrl(),
+      genExternalRef: () => crypto.randomUUID(),
+      cardTokenPlaceholder: true,
+    });
+
+    res.status(200).json({
+      body: buildA2Body(input),
+      provenance,
+      meta: {
+        flow: "a2",
+        dryRun: true,
+        mpCalled: false,
+        dbWritten: false,
+        counterIncremented: false,
+      },
     });
   } catch (err) {
     next(err);

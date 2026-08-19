@@ -1,12 +1,13 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { CreateA1Request } from "shared";
-import { buildDefaultReason } from "shared";
-import { createA1, getA1 } from "payments";
+import { createA1, getA1, buildA1Body } from "payments";
 import { db } from "../db.js";
 import { mpClient, getMpBackUrl, getMpNotificationUrl } from "../mp.js";
 import { tryJsonParse } from "../util.js";
 import { paginate, parsePagination } from "../lib/pagination.js";
-import { getNextSequence } from "../lib/sequence.js";
+import { getNextSequence, peekNextSequence } from "../lib/sequence.js";
+import { assembleA1 } from "../lib/assemble.js";
+import { withA1PreviewDefaults } from "../lib/previewDefaults.js";
 
 export const a1Router = Router();
 
@@ -15,52 +16,18 @@ a1Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = CreateA1Request.parse(req.body);
 
-    // externalReference is optional — generate a UUID when omitted
-    const externalReference = body.externalReference ?? crypto.randomUUID();
-
-    // Default start_date to tomorrow if not provided (prevents immediate debt)
-    const startDate =
-      body.autoRecurring.startDate ??
-      new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-    // Compose effective reason: user override wins if non-empty, otherwise
-    // compose a default from the route shape. The counter ALWAYS advances
-    // (per locked decision), even when the user's reason wins.
+    // The counter ALWAYS advances (per locked decision), even when the
+    // user's reason wins — getNextSequence mutates; assembleA1 itself never does.
     const seq = await getNextSequence("a1_pending");
-    const userReason = body.reason?.trim() ?? "";
-    const effectiveReason =
-      userReason !== ""
-        ? userReason
-        : buildDefaultReason({
-            type: "A.1",
-            channel: "checkout_pro",
-            paymentMethod: "pending",
-            seq,
-          });
-
-    const result = await createA1(mpClient(), {
-      reason: effectiveReason,
-      payerEmail: body.payerEmail,
-      externalReference,
-      backUrl: body.backUrl ?? getMpBackUrl(),
+    const { input } = assembleA1(body, {
+      seq,
+      seqVolatile: false,
+      backUrl: getMpBackUrl(),
       notificationUrl: getMpNotificationUrl(),
-      autoRecurring: {
-        frequency: body.autoRecurring.frequency,
-        frequencyType: body.autoRecurring.frequencyType,
-        amount: body.autoRecurring.amount,
-        currency: body.autoRecurring.currency,
-        startDate,
-        ...(body.autoRecurring.endDate !== undefined
-          ? { endDate: body.autoRecurring.endDate }
-          : {}),
-        ...(body.autoRecurring.freeTrial !== undefined
-          ? { freeTrial: body.autoRecurring.freeTrial }
-          : {}),
-        ...(body.autoRecurring.repetitions !== undefined
-          ? { repetitions: body.autoRecurring.repetitions }
-          : {}),
-      },
+      genExternalRef: () => crypto.randomUUID(),
     });
+
+    const result = await createA1(mpClient(), input);
 
     const rawCreate = JSON.stringify(result);
 
@@ -71,12 +38,12 @@ a1Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
           method: "a1_pending",
           mpId: result.id ?? null,
           status: result.status ?? null,
-          externalReference,
-          payerEmail: body.payerEmail,
-          reason: effectiveReason,
-          amount: body.autoRecurring.amount,
-          currency: body.autoRecurring.currency,
-          startDate,
+          externalReference: input.externalReference,
+          payerEmail: input.payerEmail,
+          reason: input.reason,
+          amount: input.autoRecurring.amount,
+          currency: input.autoRecurring.currency,
+          startDate: input.autoRecurring.startDate,
           initPoint: result.init_point ?? null,
           rawCreate,
         },
@@ -101,6 +68,37 @@ a1Router.post("/", async (req: Request, res: Response, next: NextFunction) => {
       rawCreate: result,
       rawLastSearch: null,
       createdAt: subscription.createdAt.toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /a1/preview — non-mutating dry-run: same defaulting + body shape as
+// the real create route, but NO MP call, NO DB write, NO counter increment.
+a1Router.post("/preview", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = CreateA1Request.parse(withA1PreviewDefaults(req.body));
+
+    const peeked = await peekNextSequence("a1_pending");
+    const { input, provenance } = assembleA1(body, {
+      seq: peeked.next,
+      seqVolatile: peeked.volatile,
+      backUrl: getMpBackUrl(),
+      notificationUrl: getMpNotificationUrl(),
+      genExternalRef: () => crypto.randomUUID(),
+    });
+
+    res.status(200).json({
+      body: buildA1Body(input),
+      provenance,
+      meta: {
+        flow: "a1",
+        dryRun: true,
+        mpCalled: false,
+        dbWritten: false,
+        counterIncremented: false,
+      },
     });
   } catch (err) {
     next(err);

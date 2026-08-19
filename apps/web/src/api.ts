@@ -11,13 +11,11 @@ import type {
   PlanDetailResponse,
   CreatePaymentProfileRequest,
   ChargeOrderRequest,
-  CreateNoteRequest,
-  UpdateNoteRequest,
-  NoteResponse,
   ApiErrorLogResponse,
   PaymentDiagResponse,
   PaginationEnvelope,
   TunnelCheckResponse,
+  PreviewResponse,
 } from "shared";
 
 import { API_URL as API } from "./config.js";
@@ -146,6 +144,13 @@ export function getA1Detail(id: string): Promise<SubscriptionDetailResponse> {
   return get<SubscriptionDetailResponse>(`/a1/${encodeURIComponent(id)}`);
 }
 
+/** Non-mutating dry-run of the A.1 create body. Accepts a partial/empty
+ *  body — the server fills in placeholders for anything missing and
+ *  returns the fully-defaulted body + per-field provenance. */
+export function previewA1(body: Partial<CreateA1Request>): Promise<PreviewResponse> {
+  return post<PreviewResponse>("/a1/preview", body);
+}
+
 // ---------------------------------------------------------------------------
 // A.2 — Preapproval Authorized
 // ---------------------------------------------------------------------------
@@ -171,6 +176,12 @@ export function searchA2(id: string): Promise<unknown> {
 
 export function getA2Detail(id: string): Promise<SubscriptionDetailResponse> {
   return get<SubscriptionDetailResponse>(`/a2/${encodeURIComponent(id)}`);
+}
+
+/** Non-mutating dry-run of the A.2 create body. `card_token_id` is ALWAYS a
+ *  placeholder in the response — preview never tokenizes a real card. */
+export function previewA2(body: Partial<CreateA2Request>): Promise<PreviewResponse> {
+  return post<PreviewResponse>("/a2/preview", body);
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +221,11 @@ export function createPlan(body: CreatePlanRequest): Promise<PlanResponse> {
   return post<PlanResponse>("/a3/plans", body);
 }
 
+/** Non-mutating dry-run of the A.3 plan-create body. */
+export function previewA3Plan(body: Partial<CreatePlanRequest>): Promise<PreviewResponse> {
+  return post<PreviewResponse>("/a3/plans/preview", body);
+}
+
 /** List A.3 plans. Returns a `PaginationEnvelope<PlanResponse>`. */
 export function listA3Plans(
   opts?: { page?: number; limit?: number },
@@ -235,6 +251,11 @@ export function updatePlan(id: string, body: UpdatePlanRequest): Promise<PlanRes
 
 export function subscribeToPlan(body: SubscribeToPlanRequest): Promise<SubscribeResult> {
   return post<SubscribeResult>("/a3/subscribe", body);
+}
+
+/** Non-mutating dry-run of the A.3 subscribe body. */
+export function previewA3Subscribe(body: Partial<SubscribeToPlanRequest>): Promise<PreviewResponse> {
+  return post<PreviewResponse>("/a3/subscribe/preview", body);
 }
 
 /** List A.3 subscriptions. Returns a `PaginationEnvelope<SubscriptionResponse>`. */
@@ -401,38 +422,6 @@ export interface MpConfigInfo {
 /** Non-secret view of the MP credentials the API is running with. */
 export function getMpConfig(): Promise<MpConfigInfo> {
   return get<MpConfigInfo>("/config/mp");
-}
-
-// ---------------------------------------------------------------------------
-// Notes
-// ---------------------------------------------------------------------------
-
-/** List notes for a method. Returns a `PaginationEnvelope<NoteResponse>`. */
-export function listNotes(
-  method: SubscriptionMethod,
-  opts?: { page?: number; limit?: number },
-): Promise<PaginationEnvelope<NoteResponse>> {
-  const params = new URLSearchParams();
-  params.set("method", method);
-  if (opts?.page) params.set("page", String(opts.page));
-  if (opts?.limit) params.set("limit", String(opts.limit));
-  return get<PaginationEnvelope<NoteResponse>>(`/notes?${params}`);
-}
-
-export function createNote(body: CreateNoteRequest): Promise<NoteResponse> {
-  return post<NoteResponse>("/notes", body);
-}
-
-export function updateNote(id: string, body: UpdateNoteRequest): Promise<NoteResponse> {
-  return patch<NoteResponse>(`/notes/${encodeURIComponent(id)}`, body);
-}
-
-export function deleteNote(id: string): Promise<void> {
-  // DELETE /notes returns 204 with no body. The existing del<T>() helper calls
-  // res.json(), which would throw on an empty body. Use a dedicated no-body fetch.
-  return fetch(`${API}/notes/${encodeURIComponent(id)}`, { method: "DELETE" }).then((res) => {
-    if (!res.ok) throw new Error(res.statusText);
-  });
 }
 
 // ---------------------------------------------------------------------------

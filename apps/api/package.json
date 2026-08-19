@@ -7,7 +7,8 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "db:push": "dotenv -e ../../.env -- prisma db push",
-    "db:generate": "dotenv -e ../../.env -- prisma generate"
+    "db:generate": "dotenv -e ../../.env -- prisma generate",
+    "test": "vitest run --config ../../vitest.config.ts --project api"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",

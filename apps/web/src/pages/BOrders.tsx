@@ -8,8 +8,6 @@ import { StatusBadge } from "../components/StatusBadge.js";
 import { AdvancedSection } from "../components/AdvancedSection.js";
 import { CardFormMpJs } from "../components/CardFormMpJs.js";
 import { CardBrick } from "../components/CardBrick.js";
-import { SubViewToggle } from "../components/SubViewToggle.js";
-import { NotesView } from "../components/NotesView.js";
 import { HistorySidebar } from "../components/HistorySidebar.js";
 import { Pagination } from "../components/Pagination.js";
 import { Drawer } from "../components/Drawer.js";
@@ -32,8 +30,6 @@ import type {
 } from "../api.js";
 import type { SubscriptionDetailResponse, Tokenization } from "shared";
 import { MP_PUBLIC_KEY as PUBLIC_KEY } from "../config.js";
-
-type SubView = "main" | "notas";
 
 type DrawerTab = "register" | "charge";
 
@@ -536,7 +532,6 @@ export function BOrders() {
   const navigate = useNavigate();
   const selectedId = params.id ?? null;
 
-  const [subView, setSubView] = useState<SubView>("main");
   // Drawer is a transient UI state. Not in the URL. Closes on URL change
   // (see the selectedId-effect below) so a stale form never appears on
   // a different entity.
@@ -664,27 +659,7 @@ export function BOrders() {
         </p>
       </div>
 
-      <div className="mb-6">
-        <SubViewToggle
-          value={subView}
-          onChange={(v) => {
-            if (v === "notas") {
-              navigate("/notes?method=b_orders");
-            } else {
-              setSubView(v);
-            }
-          }}
-          opts={[
-            { key: "main", label: "Pagos" },
-            { key: "notas", label: "Notas" },
-          ]}
-        />
-      </div>
-
-      {subView === "notas" ? (
-        <NotesView method="b_orders" />
-      ) : (
-        <MasterDetail
+      <MasterDetail
           sidebar={
             <HistorySidebar
               title="Suscripciones"
@@ -821,7 +796,6 @@ export function BOrders() {
             />
           }
         />
-      )}
 
       {/* Drawer is always mounted; `open` controls visibility. Children
           unmount on close (form state is discarded on every open, per

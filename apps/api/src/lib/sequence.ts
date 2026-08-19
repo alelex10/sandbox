@@ -64,3 +64,35 @@ export async function getNextSequence(
     return String(value % 10000).padStart(4, "0");
   });
 }
+
+// ---------------------------------------------------------------------------
+// peekNextSequence — read-only preview of what getNextSequence would return
+// ---------------------------------------------------------------------------
+//
+// Used ONLY by preview (dry-run) endpoints. Structurally guarantees no
+// mutation: `findUnique` only, never `upsert`/`update`/`$transaction`. The
+// Counter row is NOT created lazily here (unlike getNextSequence) — a
+// missing row simply peeks as `current: 0`. Calling this any number of
+// times with no intervening `getNextSequence` call always returns the same
+// `next` value, because nothing is written.
+
+export interface PeekedSequence {
+  /** 4-digit zero-padded decimal string this call WOULD burn, e.g. "0042". */
+  next: string;
+  /** Current (already-persisted) Counter value, 0 when the row doesn't exist yet. */
+  current: number;
+  /** Always true — the caller must treat `next` as provisional (may change by submit time). */
+  volatile: true;
+}
+
+export async function peekNextSequence(
+  method: CounterMethod,
+): Promise<PeekedSequence> {
+  if (!VALID_METHODS.includes(method)) {
+    throw new Error(`peekNextSequence: unknown method "${method}"`);
+  }
+  const row = await db.counter.findUnique({ where: { name: method } });
+  const current = row?.value ?? 0;
+  const next = String((current + 1) % 10000).padStart(4, "0");
+  return { next, current, volatile: true };
+}
